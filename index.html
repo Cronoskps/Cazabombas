@@ -21,6 +21,13 @@
 
         <div class="tools-bar">
             <span class="tools-label">Herramientas:</span>
+
+            <!-- En tu barra de herramientas en index.html -->
+            <button class="tool-btn" id="export-log-btn" style="background:#4338ca; border-color:#6366f1;"
+                onclick="exportMatchHistory()">📋 Copiar Historial de Partidas</button>
+            <button class="tool-btn" style="background:#b91c1c; border-color:#ef4444;" onclick="clearMatchHistory()">🗑️
+                Borrar Historial</button>
+
             <button class="tool-btn" id="dual-detector-btn" onclick="triggerDualDetector()">🔍 Detector Dual (<span
                     id="dual-charges">2</span>)</button>
             <button class="tool-btn" id="self-cut-btn" onclick="triggerSelfPairCut()"
@@ -52,3 +59,9 @@
 </body>
 
 </html>
+
+
+//Subir actualizaciones
+//git add .
+//git commit -m "Corregir ruta de index.html"
+//git push

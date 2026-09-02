@@ -78,6 +78,7 @@ function initGame() {
     renderTracker();
     renderBoard();
     updateToolsState();
+    recordGameStart();
 }
 
 function buildModalKeypad() {
@@ -582,6 +583,7 @@ function checkGameState() {
     if (state.lives <= 0) {
         state.active = false;
         log("💥 ¡LA BOMBA HA DETONADO! Fin de la partida.", "#ef4444");
+        saveFinishedGame("DERROTA - BOMBA DETONADA"); // <-- Agregado para el Log interno
         return;
     }
 
@@ -589,7 +591,72 @@ function checkGameState() {
     if (remaining === 0) {
         state.active = false;
         log("🎉 ¡MISIÓN CUMPLIDA! Todos los cables fueron desactivados.", "#10b981");
+        saveFinishedGame("VICTORIA - CABLES COMPLETADOS"); // <-- Agregado
     }
 }
 
 window.onload = initGame;
+
+// --- SISTEMA DE LOG INTERNO MULTI-PARTIDA ---
+let currentSessionLog = [];
+
+// Interceptor de la función log original para guardar los eventos
+const originalLog = log;
+log = function (msg, color = "#94a3b8") {
+    originalLog(msg, color);
+    currentSessionLog.push(`> ${msg}`);
+};
+
+// Registrar el inicio de la partida con el reparto inicial de atriles
+function recordGameStart() {
+    currentSessionLog = [];
+    currentSessionLog.push(`=== NUEVA PARTIDA INICIADA ===`);
+    currentSessionLog.push(`FECHA: ${new Date().toLocaleTimeString()}`);
+    currentSessionLog.push(`REPARTO INICIAL:`);
+    PLAYERS.forEach((name, idx) => {
+        const handStr = state.matrix[idx].map(c => `${c.pos}:${c.value}${c.isYellow ? '🟡' : ''}`).join(' ');
+        currentSessionLog.push(`  ${name}: [ ${handStr} ]`);
+    });
+    currentSessionLog.push(`--- ACCIONES DE LA PARTIDA ---`);
+}
+
+// Guardar la partida finalizada en el historial acumulado
+function saveFinishedGame(outcome) {
+    currentSessionLog.push(`RESULTADO FINAL: ${outcome}`);
+    currentSessionLog.push(`VIDAS RESTANTES: ${state.lives}`);
+    currentSessionLog.push(`CABLES CORTADOS:`);
+    Object.keys(state.inventory).forEach(k => {
+        const item = state.inventory[k];
+        currentSessionLog.push(`  ${k}${item.yellow ? '🟡' : ''}: ${item.cut}/${item.total}`);
+    });
+    currentSessionLog.push(`==========================================\n`);
+
+    // Guardar en localStorage
+    let history = JSON.parse(localStorage.getItem('cazabombas_history') || '[]');
+    history.push(currentSessionLog.join('\n'));
+    localStorage.setItem('cazabombas_history', JSON.stringify(history));
+}
+
+// Función para copiar todo el historial consolidado al portapapeles
+function exportMatchHistory() {
+    const history = JSON.parse(localStorage.getItem('cazabombas_history') || '[]');
+    if (history.length === 0) {
+        alert("No hay partidas registradas en el historial todavía.");
+        return;
+    }
+    const fullLog = history.join('\n\n');
+    navigator.clipboard.writeText(fullLog).then(() => {
+        alert(`¡Copiado al portapapeles! Se consolidaron ${history.length} partida(s). Pégalas en el chat.`);
+    }).catch(err => {
+        console.log(fullLog);
+        alert("No se pudo copiar automáticamente al portapapeles. El texto completo se imprimió en la Consola (F12).");
+    });
+}
+
+// Función para reiniciar el historial cuando quieras empezar una nueva tanda
+function clearMatchHistory() {
+    if (confirm("¿Deseas borrar todo el historial acumulado de partidas?")) {
+        localStorage.removeItem('cazabombas_history');
+        alert("Historial borrado.");
+    }
+}
