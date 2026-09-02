@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cazabombas 💣 - Consola Táctica</title>
+    <!-- Vinculación del archivo CSS externo -->
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <h1 class="title">CAZABOMBAS 💣</h1>
+            <div class="lives" id="lives-display">❤️❤️❤️</div>
+        </header>
+
+        <div class="tracker" id="tracker-bar"></div>
+
+        <div class="tools-bar">
+            <span class="tools-label">Herramientas:</span>
+            <button class="tool-btn" id="dual-detector-btn" onclick="triggerDualDetector()">🔍 Detector Dual (<span
+                    id="dual-charges">2</span>)</button>
+            <button class="tool-btn" id="self-cut-btn" onclick="triggerSelfPairCut()"
+                style="background:#0369a1; border-color:#38bdf8;">✂️ Cortar Pareja Propia</button>
+            <button class="tool-btn" id="pliers-btn" disabled onclick="usePliers()">🔧 Alicates (4/4 del 5)</button>
+            <button class="tool-btn" id="scanner-btn" disabled onclick="useScanner()">📡 Escáner (4/4 del 8)</button>
+            <button class="tool-btn" id="advance-bots-btn"
+                style="display:none; background:#16a34a; border-color:#22c55e;" onclick="executeBotRounds()">▶️
+                Siguiente Ronda IA</button>
+            <button class="tool-btn" style="margin-left:auto; background:#dc2626; border-color:#ef4444;"
+                onclick="initGame()">🔄 Reiniciar</button>
+        </div>
+
+        <div class="board" id="board-container"></div>
+        <div id="terminal"></div>
+    </div>
+
+    <!-- Modal Numérico -->
+    <div class="modal-overlay hidden" id="cut-modal">
+        <div class="modal">
+            <h3 id="modal-title">Declarar valor a cortar</h3>
+            <div class="keypad" id="modal-keypad"></div>
+            <button class="cancel-btn" onclick="closeModal()">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- Vinculación del script JS externo -->
+    <script src="game.js"></script>
+</body>
+
+</html>

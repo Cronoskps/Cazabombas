@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cazabombas 💣 - Consola Táctica Completa</title>
+    <style>
+        :root {
+            --bg: #090d16;
+            --panel: #131b2a;
+            --border: #233044;
+            --cable: #1e293b;
+            --text: #f8fafc;
+            --accent-yellow: #facc15;
+            --red: #ef4444;
+            --green: #10b981;
+            --blue: #0284c7;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        header {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 10px 18px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .title {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: var(--red);
+            letter-spacing: 1px;
+        }
+
+        .lives {
+            font-size: 1.3rem;
+            letter-spacing: 2px;
+        }
+
+        .tracker {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 8px;
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+            gap: 5px;
+            text-align: center;
+            font-size: 0.75rem;
+        }
+
+        .track-item {
+            background: #0b1120;
+            padding: 5px 2px;
+            border-radius: 4px;
+            border: 1px solid #1e293b;
+            color: #94a3b8;
+        }
+
+        .track-item.done {
+            border-color: var(--green);
+            color: var(--green);
+            font-weight: bold;
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .tools-bar {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 8px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .tools-label {
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: #94a3b8;
+            text-transform: uppercase;
+        }
+
+        .tool-btn {
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #e2e8f0;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .tool-btn:hover:not(:disabled) {
+            background: #334155;
+            border-color: var(--blue);
+            color: #fff;
+        }
+
+        .tool-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            border-style: dashed;
+        }
+
+        .board {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .rack {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+        }
+
+        .rack-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #94a3b8;
+        }
+
+        .cables-row {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .cable-btn {
+            min-width: 44px;
+            height: 58px;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: bold;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            background: var(--cable);
+            color: var(--text);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+            transition: transform 0.1s;
+        }
+
+        .cable-btn:hover:not(:disabled) {
+            filter: brightness(1.25);
+            transform: translateY(-2px);
+        }
+
+        .cable-btn .pos-label {
+            font-size: 0.65rem;
+            color: #94a3b8;
+            margin-bottom: 2px;
+        }
+
+        .cable-btn.hidden {
+            background: #1e293b;
+            color: transparent;
+            border-color: #334155;
+        }
+
+        .cable-btn.hidden .pos-label {
+            color: #64748b;
+        }
+
+        .cable-btn.yellow:not(.hidden) {
+            border: 2px solid var(--accent-yellow);
+            color: var(--accent-yellow);
+        }
+
+        .cable-btn.cut {
+            opacity: 0.28;
+            text-decoration: line-through;
+            cursor: default;
+            filter: grayscale(1);
+        }
+
+        .cable-btn.clue {
+            box-shadow: 0 0 0 2px var(--blue);
+        }
+
+        #terminal {
+            background: #050811;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 10px;
+            height: 125px;
+            overflow-y: auto;
+            font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .log-entry {
+            margin: 0;
+            line-height: 1.35;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(2px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.hidden {
+            display: none;
+        }
+
+        .modal {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 18px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 360px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .modal h3 {
+            margin: 0;
+            font-size: 0.95rem;
+            color: #f8fafc;
+            text-align: center;
+        }
+
+        .keypad {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+        }
+
+        .keypad-btn {
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #fff;
+            padding: 9px 0;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .keypad-btn:hover {
+            background: #334155;
+        }
+
+        .keypad-btn.yellow-key {
+            color: var(--accent-yellow);
+            border-color: var(--accent-yellow);
+        }
+
+        .cancel-btn {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 8px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <h1 class="title">CAZABOMBAS 💣</h1>
+            <div class="lives" id="lives-display">❤️❤️❤️</div>
+        </header>
+
+        <div class="tracker" id="tracker-bar"></div>
+
+        <div class="tools-bar">
+            <span class="tools-label">Herramientas:</span>
+            <button class="tool-btn" id="dual-detector-btn" onclick="triggerDualDetector()">🔍 Detector Dual (<span
+                    id="dual-charges">2</span>)</button>
+            <button class="tool-btn" id="self-cut-btn" onclick="triggerSelfPairCut()"
+                style="background:#0369a1; border-color:#38bdf8;">✂️ Cortar Pareja Propia</button>
+            <button class="tool-btn" id="pliers-btn" disabled onclick="usePliers()">🔧 Alicates (4/4 del 5)</button>
+            <button class="tool-btn" id="scanner-btn" disabled onclick="useScanner()">📡 Escáner (4/4 del 8)</button>
+            <button class="tool-btn" id="advance-bots-btn"
+                style="display:none; background:#16a34a; border-color:#22c55e;" onclick="executeBotRounds()">▶️
+                Siguiente Ronda IA</button>
+            <button class="tool-btn" style="margin-left:auto; background:#dc2626; border-color:#ef4444;"
+                onclick="initGame()">🔄 Reiniciar</button>
+        </div>
+
+        <div class="board" id="board-container"></div>
+        <div id="terminal"></div>
+    </div>
+
+    <div class="modal-overlay hidden" id="cut-modal">
+        <div class="modal">
+            <h3 id="modal-title">Declarar valor a cortar</h3>
+            <div class="keypad" id="modal-keypad"></div>
+            <button class="cancel-btn" onclick="closeModal()">Cancelar</button>
+        </div>
+    </div>
+
+    <script>
+        const LETTERS = "ABCDEFGHIJKLM";
+        const PLAYERS = ["Tu Atril (P1)", "Mateo (IA 2)", "Valentina (IA 3)", "Lucas (IA 4)"];
+
+        let state = {
+            lives: 3,
+            active: true,
+            matrix: [[], [], [], []],
+            inventory: {},
+            dualCharges: 2,
+            pliersActive: false,
+            initialClueSelected: false,
+            pendingTarget: null
+        };
+
+        function log(msg, color = "#94a3b8") {
+            const term = document.getElementById('terminal');
+            const p = document.createElement('p');
+            p.className = 'log-entry';
+            p.style.color = color;
+            p.textContent = `> ${msg}`;
+            term.appendChild(p);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        function initGame() {
+            state.lives = 3;
+            state.active = true;
+            state.dualCharges = 2;
+            state.pliersActive = false;
+            state.initialClueSelected = false;
+            state.matrix = [[], [], [], []];
+            state.inventory = {};
+
+            for (let i = 1; i <= 12; i++) {
+                state.inventory[i] = { total: 4, cut: 0 };
+            }
+            state.inventory[4.5] = { total: 2, cut: 0, yellow: true };
+            state.inventory[9.5] = { total: 2, cut: 0, yellow: true };
+
+            let deck = [];
+            for (let i = 1; i <= 12; i++) {
+                for (let j = 0; j < 4; j++) {
+                    deck.push({ value: i, isYellow: false });
+                }
+            }
+            deck.push({ value: 4.5, isYellow: true }, { value: 4.5, isYellow: true });
+            deck.push({ value: 9.5, isYellow: true }, { value: 9.5, isYellow: true });
+            deck.sort(() => Math.random() - 0.5);
+
+            for (let p = 0; p < 4; p++) {
+                let hand = deck.splice(0, 13).map((item, idx) => ({
+                    ...item,
+                    cut: false,
+                    clue: false,
+                    revealed: p === 0,
+                    pos: LETTERS[idx]
+                }));
+                hand.sort((a, b) => a.value - b.value);
+                hand.forEach((item, idx) => item.pos = LETTERS[idx]);
+                state.matrix[p] = hand;
+            }
+
+            // Pistas iniciales de los bots (solo números enteros estándar)
+            [1, 2, 3].forEach(botIdx => {
+                const standardCards = state.matrix[botIdx].filter(c => !c.isYellow);
+                const card = standardCards[Math.floor(Math.random() * standardCards.length)];
+                card.clue = true;
+                card.revealed = true;
+            });
+
+            document.getElementById('terminal').innerHTML = '';
+            log("Partida configurada con 52 cables inmutables repartidos.", "#38bdf8");
+            log("👉 Haz clic en una carta estándar de TU ATRIL para fijar tu pista inicial voluntaria.", "#facc15");
+
+            buildModalKeypad();
+            renderTracker();
+            renderBoard();
+            updateToolsState();
+        }
+
+        function buildModalKeypad() {
+            const pad = document.getElementById('modal-keypad');
+            pad.innerHTML = '';
+            const values = [1, 2, 3, 4, 4.5, 5, 6, 7, 8, 9, 9.5, 10, 11, 12];
+            values.forEach(v => {
+                const btn = document.createElement('button');
+                btn.className = `keypad-btn ${String(v).includes('.') ? 'yellow-key' : ''}`;
+                btn.textContent = String(v).includes('.') ? `${v}🟡` : v;
+                btn.onclick = () => submitGuess(v);
+                pad.appendChild(btn);
+            });
+        }
+
+        function renderTracker() {
+            const bar = document.getElementById('tracker-bar');
+            bar.innerHTML = '';
+            Object.keys(state.inventory).forEach(val => {
+                const item = state.inventory[val];
+                const div = document.createElement('div');
+                const isDone = item.cut === item.total;
+                div.className = `track-item ${isDone ? 'done' : ''}`;
+                div.textContent = `${item.yellow ? val + '🟡' : val}: ${item.cut}/${item.total} ${isDone ? '✅' : ''}`;
+                bar.appendChild(div);
+            });
+        }
+
+        function updateToolsState() {
+            const myActiveCards = state.matrix[0].filter(c => !c.cut).length;
+            const autoAdvanceBtn = document.getElementById('advance-bots-btn');
+
+            if (myActiveCards === 0 && state.active) {
+                autoAdvanceBtn.style.display = 'inline-block';
+            } else {
+                autoAdvanceBtn.style.display = 'none';
+            }
+
+            document.getElementById('dual-charges').textContent = state.dualCharges;
+            document.getElementById('dual-detector-btn').disabled = state.dualCharges <= 0 || !state.active || !state.initialClueSelected;
+            document.getElementById('self-cut-btn').disabled = !state.active || !state.initialClueSelected || myActiveCards === 0;
+            document.getElementById('pliers-btn').disabled = (state.inventory[5].cut < 4) || !state.active;
+            document.getElementById('scanner-btn').disabled = (state.inventory[8].cut < 4) || !state.active;
+        }
+
+        function renderBoard() {
+            const board = document.getElementById('board-container');
+            board.innerHTML = '';
+            document.getElementById('lives-display').textContent = '❤️'.repeat(Math.max(0, state.lives)) + '💔'.repeat(Math.max(0, 3 - state.lives));
+
+            const myActiveCards = state.matrix[0].filter(c => !c.cut).length;
+
+            state.matrix.forEach((hand, pIdx) => {
+                const rack = document.createElement('div');
+                rack.className = 'rack';
+
+                const header = document.createElement('div');
+                header.className = 'rack-header';
+                header.innerHTML = `<span>${PLAYERS[pIdx]}</span> <span>${hand.filter(c => !c.cut).length} cables activos</span>`;
+                rack.appendChild(header);
+
+                const row = document.createElement('div');
+                row.className = 'cables-row';
+
+                hand.forEach((cable, cIdx) => {
+                    const btn = document.createElement('button');
+                    const isHidden = !cable.revealed && !cable.cut;
+                    const showYellow = cable.isYellow && (pIdx === 0 || cable.revealed || cable.cut);
+
+                    btn.className = `cable-btn ${showYellow ? 'yellow' : ''} ${isHidden ? 'hidden' : ''} ${cable.cut ? 'cut' : ''} ${cable.clue ? 'clue' : ''}`;
+
+                    const posSpan = document.createElement('span');
+                    posSpan.className = 'pos-label';
+                    posSpan.textContent = cable.pos;
+
+                    const valSpan = document.createElement('span');
+                    valSpan.textContent = isHidden ? '?' : cable.value + (cable.isYellow ? '🟡' : '');
+
+                    btn.appendChild(posSpan);
+                    btn.appendChild(valSpan);
+
+                    if (pIdx === 0) {
+                        btn.disabled = state.initialClueSelected || cable.cut;
+                        btn.onclick = () => {
+                            if (!state.initialClueSelected) {
+                                if (cable.isYellow) {
+                                    alert("Reglamento: No puedes marcar un cable amarillo (.5🟡) como pista inicial. Elige un número entero.");
+                                    return;
+                                }
+                                cable.clue = true;
+                                state.initialClueSelected = true;
+                                log(`Pista inicial voluntaria fijada en posición ${cable.pos} (${cable.value}).`, "#38bdf8");
+                                log("¡Tu turno! Señala un cable compañero o usa tus herramientas.", "#10b981");
+                                renderBoard();
+                                updateToolsState();
+                            }
+                        };
+                    } else {
+                        btn.disabled = !state.active || cable.cut || !state.initialClueSelected || myActiveCards === 0;
+                        if (!cable.cut) {
+                            btn.onclick = () => openCutModal(pIdx, cIdx);
+                        }
+                    }
+
+                    row.appendChild(btn);
+                });
+
+                rack.appendChild(row);
+                board.appendChild(rack);
+            });
+        }
+
+        function triggerSelfPairCut() {
+            if (!state.active || !state.initialClueSelected) return;
+
+            const valInput = prompt("¿Qué número repetido de tu propio atril declaras cortar en pareja? (ej: 2 o 11):");
+            if (!valInput) return;
+            const val = parseFloat(valInput);
+
+            if (!state.inventory[val]) {
+                alert("Número no válido.");
+                return;
+            }
+
+            // REGLA 1: Para números enteros estándar, debe haberse cortado al menos 1 par previo en la mesa (2/4)
+            if (!state.inventory[val].yellow && state.inventory[val].cut < 2) {
+                alert(`Reglamento: No puedes cortar una pareja propia de ${val} desde cero (0/4). Primero debe cortarse un par en la mesa mediante interacción.`);
+                return;
+            }
+
+            const activeCopies = state.matrix[0].filter(c => c.value === val && !c.cut);
+
+            if (activeCopies.length < 2) {
+                alert(`No tienes al menos dos copias activas del ${val} en tu atril para realizar un autocorte.`);
+                return;
+            }
+
+            // REGLA 2: Se cortan estrictamente 2 cartas exactas (una pareja), incluso si tienes 3 copias
+            activeCopies[0].cut = true;
+            activeCopies[1].cut = true;
+            state.inventory[val].cut += 2;
+
+            const extraNote = activeCopies.length > 2 ? ` (Conservas 1 copia restante del ${val} en tu atril).` : '';
+            log(`✂️ ¡AUTOCORTE EN PAREJA! Descartaste tu pareja de posiciones ${activeCopies[0].pos} y ${activeCopies[1].pos} de valor ${val}.${extraNote}`, "#10b981");
+
+            checkGameState();
+            renderTracker();
+            renderBoard();
+            updateToolsState();
+
+            if (state.active && state.lives > 0) {
+                setTimeout(executeBotRounds, 800);
+            }
+        }
+
+        function openCutModal(playerIdx, cableIdx) {
+            if (!state.active) return;
+            state.pendingTarget = { pIdx: playerIdx, cIdx: cableIdx };
+            const card = state.matrix[playerIdx][cableIdx];
+            document.getElementById('modal-title').textContent = `Declarar valor para posición ${card.pos} (${PLAYERS[playerIdx]})`;
+            document.getElementById('cut-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('cut-modal').classList.add('hidden');
+            state.pendingTarget = null;
+        }
+
+        function submitGuess(guess) {
+            const target = state.pendingTarget;
+            closeModal();
+            if (!target) return;
+
+            const targetCable = state.matrix[target.pIdx][target.cIdx];
+            const playerCard = state.matrix[0].find(c => c.value === guess && !c.cut);
+
+            if (!playerCard) {
+                log(`Acción no válida: No posees ninguna copia activa del ${guess} en tu atril.`, "#f59e0b");
+                return;
+            }
+
+            if (targetCable.value === guess) {
+                log(`¡CORTE EXITOSO! Cortaste el ${guess} en ${PLAYERS[target.pIdx]} (${targetCable.pos}).`, "#10b981");
+                targetCable.cut = true;
+                targetCable.revealed = true;
+                playerCard.cut = true;
+                state.inventory[guess].cut += 2;
+            } else {
+                if (state.pliersActive) {
+                    log(`¡Fallo protegido por Alicates! La posición ${targetCable.pos} era ${targetCable.value}. No pierden vidas.`, "#38bdf8");
+                    state.pliersActive = false;
+                } else {
+                    state.lives--;
+                    log(`¡FALLO! La posición ${targetCable.pos} de ${PLAYERS[target.pIdx]} era ${targetCable.value}. Pierden 1 vida.`, "#ef4444");
+                }
+                targetCable.revealed = true;
+            }
+
+            checkGameState();
+            renderTracker();
+            renderBoard();
+            updateToolsState();
+
+            if (state.active && state.lives > 0) {
+                setTimeout(executeBotRounds, 800);
+            }
+        }
+
+        function triggerDualDetector() {
+            if (state.dualCharges <= 0) return;
+            const targetP = prompt("¿A qué compañero aplicar Detector Dual? (2: Mateo, 3: Valentina, 4: Lucas):");
+            const pIdx = parseInt(targetP) - 1;
+            if (![1, 2, 3].includes(pIdx)) return;
+
+            const pos = prompt("Ingresa la letra de la posición a escanear (ej: D):").toUpperCase();
+            const card = state.matrix[pIdx].find(c => c.pos === pos && !c.cut);
+            if (!card) { alert("Posición no válida."); return; }
+
+            const num1 = parseFloat(prompt("Primer número posible:"));
+            const num2 = parseFloat(prompt("Segundo número posible:"));
+
+            state.dualCharges--;
+            if (card.value === num1 || card.value === num2) {
+                card.clue = true;
+                log(`🔍 Detector Dual: CONFIRMADO. La casilla ${pos} de ${PLAYERS[pIdx]} es ${num1} o ${num2}.`, "#38bdf8");
+            } else {
+                log(`🔍 Detector Dual: NEGATIVO. La casilla ${pos} de ${PLAYERS[pIdx]} NO es ni ${num1} ni ${num2}.`, "#94a3b8");
+            }
+            renderBoard();
+            updateToolsState();
+        }
+
+        function usePliers() {
+            state.pliersActive = true;
+            log("🔧 Alicates activados: El próximo corte fallido no restará vidas.", "#38bdf8");
+        }
+
+        function useScanner() {
+            const targetP = parseInt(prompt("¿A quién escanear? (2: Mateo, 3: Valentina, 4: Lucas):")) - 1;
+            const num = parseFloat(prompt("¿Qué número consultar?:"));
+            if (![1, 2, 3].includes(targetP)) return;
+
+            const count = state.matrix[targetP].filter(c => c.value === num && !c.cut).length;
+            log(`📡 Escáner de Frecuencia: ${PLAYERS[targetP]} tiene ${count} copia(s) activa(s) del número ${num}.`, "#38bdf8");
+        }
+
+        function executeBotRounds() {
+            for (let bot = 1; bot <= 3; bot++) {
+                if (!state.active || state.lives <= 0) break;
+                const botHand = state.matrix[bot].filter(c => !c.cut);
+                if (botHand.length === 0) continue;
+
+                let executed = false;
+
+                // 1. Pistas visibles
+                for (let myCard of botHand) {
+                    for (let otherP = 0; otherP < 4; otherP++) {
+                        if (otherP === bot) continue;
+                        const match = state.matrix[otherP].find(c => !c.cut && c.revealed && c.value === myCard.value);
+                        if (match) {
+                            log(`${PLAYERS[bot]} ve la pista de ${PLAYERS[otherP]} (${match.pos}: ${match.value}) y corta con su ${myCard.pos}.`, "#0284c7");
+                            match.cut = true;
+                            myCard.cut = true;
+                            state.inventory[myCard.value].cut += 2;
+                            executed = true;
+                            break;
+                        }
+                    }
+                    if (executed) break;
+                }
+
+                // 2. Deducción
+                if (!executed) {
+                    for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
+                        const targetP = (bot + targetOffset) % 4;
+                        const targetHand = state.matrix[targetP].filter(c => !c.cut && !c.revealed);
+                        if (targetHand.length > 0) {
+                            const targetCard = targetHand[0];
+                            const chosenVal = botHand[0].value;
+
+                            if (targetCard.value === chosenVal) {
+                                log(`${PLAYERS[bot]} deduce y corta con éxito el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}).`, "#10b981");
+                                targetCard.cut = true;
+                                targetCard.revealed = true;
+                                botHand[0].cut = true;
+                                state.inventory[chosenVal].cut += 2;
+                            } else {
+                                state.lives--;
+                                targetCard.revealed = true;
+                                log(`${PLAYERS[bot]} intentó cortar ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}) y falló. Era un ${targetCard.value}.`, "#ef4444");
+                            }
+                            executed = true;
+                            break;
+                        }
+                    }
+                }
+
+                checkGameState();
+                renderTracker();
+                renderBoard();
+                updateToolsState();
+            }
+
+            const myActiveCards = state.matrix[0].filter(c => !c.cut).length;
+            if (myActiveCards === 0 && state.active && state.lives > 0) {
+                const remainingGlobal = Object.values(state.inventory).reduce((acc, curr) => acc + (curr.total - curr.cut), 0);
+                if (remainingGlobal > 0) {
+                    log("Atril del jugador completado. Los compañeros resuelven la mesa automáticamente...", "#facc15");
+                    setTimeout(executeBotRounds, 1200);
+                }
+            }
+        }
+
+        function checkGameState() {
+            if (state.lives <= 0) {
+                state.active = false;
+                log("💥 ¡LA BOMBA HA DETONADO! Fin de la partida.", "#ef4444");
+                return;
+            }
+
+            const remaining = Object.values(state.inventory).reduce((acc, curr) => acc + (curr.total - curr.cut), 0);
+            if (remaining === 0) {
+                state.active = false;
+                log("🎉 ¡MISIÓN CUMPLIDA! Todos los cables fueron desactivados.", "#10b981");
+            }
+        }
+
+        window.onload = initGame;
+    </script>
+</body>
+
+</html>
