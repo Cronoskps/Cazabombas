@@ -306,3 +306,46 @@ header {
     font-weight: bold;
     cursor: pointer;
 }
+
+/* Panel de pie de página para registros internos */
+.footer-admin {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #1e293b;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.footer-admin:hover {
+    opacity: 1;
+}
+
+.footer-label {
+    font-size: 0.72rem;
+    color: #64748b;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.footer-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-history {
+    background: #1e1b4b;
+    border-color: #4338ca;
+    font-size: 0.75rem;
+    padding: 4px 10px;
+}
+
+.btn-danger-soft {
+    background: #450a0a;
+    border-color: #991b1b;
+    font-size: 0.75rem;
+    padding: 4px 10px;
+}

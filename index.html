@@ -21,13 +21,6 @@
 
         <div class="tools-bar">
             <span class="tools-label">Herramientas:</span>
-
-            <!-- En tu barra de herramientas en index.html -->
-            <button class="tool-btn" id="export-log-btn" style="background:#4338ca; border-color:#6366f1;"
-                onclick="exportMatchHistory()">📋 Copiar Historial de Partidas</button>
-            <button class="tool-btn" style="background:#b91c1c; border-color:#ef4444;" onclick="clearMatchHistory()">🗑️
-                Borrar Historial</button>
-
             <button class="tool-btn" id="dual-detector-btn" onclick="triggerDualDetector()">🔍 Detector Dual (<span
                     id="dual-charges">2</span>)</button>
             <button class="tool-btn" id="self-cut-btn" onclick="triggerSelfPairCut()"
@@ -43,6 +36,16 @@
 
         <div class="board" id="board-container"></div>
         <div id="terminal"></div>
+
+        <!-- Panel secundario de auditoría al pie de la página -->
+        <footer class="footer-admin">
+            <span class="footer-label">Gestión de Partidas (Logs):</span>
+            <div class="footer-actions">
+                <button class="tool-btn btn-history" id="export-log-btn" onclick="exportMatchHistory()">📋 Copiar
+                    Historial</button>
+                <button class="tool-btn btn-danger-soft" onclick="clearMatchHistory()">🗑️ Borrar Historial</button>
+            </div>
+        </footer>
     </div>
 
     <!-- Modal Numérico -->
