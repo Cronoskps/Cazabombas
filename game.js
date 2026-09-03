@@ -404,8 +404,6 @@ function executeBotRounds() {
         const botHand = state.matrix[bot].filter(c => !c.cut);
         if (botHand.length === 0) continue;
 
-        // TÁCTICA AVANZADA: Buscar siempre de derecha a izquierda en la propia mano
-        const reversedHand = [...botHand].reverse();
         let executed = false;
 
         // PRIORIDAD 0: Autocorte de pares o cuartetos propios
@@ -417,7 +415,6 @@ function executeBotRounds() {
             const count = countByValue[val];
             const inv = state.inventory[val];
 
-            // Si el bot tiene los 4 en mano, o tiene 2 y los otros 2 ya salieron
             if (count === 4 || (count === 2 && inv.cut === 2)) {
                 const cardsToCut = botHand.filter(c => c.value === val);
                 const positions = cardsToCut.map(c => c.pos).join(" y ");
@@ -435,7 +432,6 @@ function executeBotRounds() {
             }
         }
 
-        // Si ya ejecutó un autocorte, termina su turno y pasa al siguiente bot
         if (executed) {
             checkGameState();
             renderTracker();
@@ -443,6 +439,9 @@ function executeBotRounds() {
             updateToolsState();
             continue;
         }
+
+        // Táctica física: Mano invertida solo para elegir el cable a cortar
+        const reversedHand = [...botHand].reverse();
 
         // PRIORIDAD 1: Pistas visibles públicas legítimas
         for (let myCard of reversedHand) {
@@ -524,7 +523,7 @@ function executeBotRounds() {
             }
         }
 
-        // PRIORIDAD 3: Corte obligatorio por heurística de rango y descarte estricto de inventario
+        // PRIORIDAD 3: Corte por heurística de rango y descarte estricto de inventario
         if (!executed) {
             let possibleMoves = [];
 
@@ -546,47 +545,43 @@ function executeBotRounds() {
                         if (targetRack[i].revealed || targetRack[i].cut) { maxBound = targetRack[i].value; break; }
                     }
 
-                    const validCandidates = reversedHand.filter(c => {
-                        if (c.value < minBound || c.value > maxBound) return false;
+                    // PENSAMIENTO: Se extraen los valores de la mano normal (de menor a mayor)
+                    const uniqueVals = [...new Set(botHand.map(c => c.value))];
 
-                        const inv = state.inventory[c.value];
-                        const copiesInMyHand = botHand.filter(h => h.value === c.value).length;
+                    for (let val of uniqueVals) {
+                        if (val < minBound || val > maxBound) continue;
+
+                        const inv = state.inventory[val];
+                        const copiesInMyHand = botHand.filter(h => h.value === val).length;
                         const remainingInOtherRacks = inv.total - inv.cut - copiesInMyHand;
 
-                        return remainingInOtherRacks > 0;
-                    });
-
-                    const uniqueCandidates = [];
-                    const seen = new Set();
-                    for (let cand of validCandidates) {
-                        if (!seen.has(cand.value)) {
-                            seen.add(cand.value);
-                            uniqueCandidates.push(cand);
+                        if (remainingInOtherRacks > 0) {
+                            possibleMoves.push({
+                                targetP,
+                                targetCard,
+                                guessValue: val,
+                                minBound,
+                                maxBound,
+                                rangeWidth: maxBound - minBound
+                            });
                         }
-                    }
-
-                    for (let validCandidate of uniqueCandidates) {
-                        possibleMoves.push({
-                            targetP,
-                            targetCard,
-                            validCandidate,
-                            minBound,
-                            maxBound,
-                            rangeWidth: maxBound - minBound
-                        });
                     }
                 }
             }
 
             if (possibleMoves.length > 0) {
+                // Ordenar por menor ancho de rango. Al empatar, la lista mantiene el número más bajo primero
                 possibleMoves.sort((a, b) => a.rangeWidth - b.rangeWidth);
                 const bestMove = possibleMoves[0];
 
-                const chosenVal = bestMove.validCandidate.value;
+                const chosenVal = bestMove.guessValue;
                 const targetCard = bestMove.targetCard;
                 const targetP = bestMove.targetP;
                 const minBound = bestMove.minBound;
                 const maxBound = bestMove.maxBound;
+
+                // EJECUCIÓN FÍSICA: Se selecciona la carta desde reversedHand (la de la derecha)
+                const validCandidateCard = reversedHand.find(c => c.value === chosenVal);
 
                 if (bestMove.rangeWidth > 0 && !state.pliersUsed && state.inventory[5] && state.inventory[5].cut === 4) {
                     state.pliersActive = true;
@@ -599,7 +594,7 @@ function executeBotRounds() {
                     log(`${PLAYERS[bot]} deduce por rango acotado [${minBound}-${maxBound}] y corta con éxito el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}).`, "#10b981");
                     targetCard.cut = true;
                     targetCard.revealed = true;
-                    bestMove.validCandidate.cut = true;
+                    validCandidateCard.cut = true;
                     state.inventory[chosenVal].cut += 2;
                 } else {
                     if (state.pliersActive) {
@@ -613,7 +608,8 @@ function executeBotRounds() {
                 }
                 executed = true;
             } else {
-                const fallbackCandidate = reversedHand.find(c => c.value === botHand[0].value);
+                // Contingencia en caso de que no queden jugadas viables por inventario
+                const fallbackCandidate = reversedHand[0];
                 const fallbackTargetP = (bot + 1) % 4;
                 const fallbackCard = state.matrix[fallbackTargetP].find(c => !c.cut && !c.revealed) || state.matrix[fallbackTargetP].find(c => !c.cut);
 
