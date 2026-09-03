@@ -408,6 +408,42 @@ function executeBotRounds() {
         const reversedHand = [...botHand].reverse();
         let executed = false;
 
+        // PRIORIDAD 0: Autocorte de pares o cuartetos propios
+        const countByValue = {};
+        botHand.forEach(c => countByValue[c.value] = (countByValue[c.value] || 0) + 1);
+
+        for (const valStr in countByValue) {
+            const val = parseFloat(valStr);
+            const count = countByValue[val];
+            const inv = state.inventory[val];
+
+            // Si el bot tiene los 4 en mano, o tiene 2 y los otros 2 ya salieron
+            if (count === 4 || (count === 2 && inv.cut === 2)) {
+                const cardsToCut = botHand.filter(c => c.value === val);
+                const positions = cardsToCut.map(c => c.pos).join(" y ");
+
+                log(`✂️ ¡AUTOCORTE! ${PLAYERS[bot]} descarta automáticamente sus cables de valor ${val} (posiciones ${positions}).`, "#10b981");
+
+                cardsToCut.forEach(c => {
+                    c.cut = true;
+                    c.revealed = true;
+                });
+
+                inv.cut += cardsToCut.length;
+                executed = true;
+                break;
+            }
+        }
+
+        // Si ya ejecutó un autocorte, termina su turno y pasa al siguiente bot
+        if (executed) {
+            checkGameState();
+            renderTracker();
+            renderBoard();
+            updateToolsState();
+            continue;
+        }
+
         // PRIORIDAD 1: Pistas visibles públicas legítimas
         for (let myCard of reversedHand) {
             for (let otherP = 0; otherP < 4; otherP++) {
@@ -431,7 +467,7 @@ function executeBotRounds() {
         if (!executed) {
             if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut === 4) {
                 const targetP = (bot + 1) % 4;
-                const queryVal = botHand[0].value; // Consulta la carta más baja para barrer desde abajo
+                const queryVal = botHand[0].value;
                 const count = state.matrix[targetP].filter(c => c.value === queryVal && !c.cut).length;
                 state.scannerUsed = true;
                 log(`📡 ${PLAYERS[bot]} activa el Escáner de Frecuencia con ${PLAYERS[targetP]}: confirma que tiene ${count} copia(s) del número ${queryVal}.`, "#38bdf8");
@@ -467,7 +503,6 @@ function executeBotRounds() {
                                 targetCard.revealed = true;
                                 log(`🔍 ${PLAYERS[bot]} usa Detector Dual sobre ${PLAYERS[targetP]} (${targetCard.pos}) [${opt1} o ${opt2}]: ¡CONFIRMADO! Es ${targetCard.value}.`, "#38bdf8");
 
-                                // Si acierta, busca la copia más a la derecha en su mano para el corte simultáneo
                                 const botMatch = reversedHand.find(c => c.value === targetCard.value);
                                 if (botMatch) {
                                     log(`✂️ ¡Corte simultáneo de ${PLAYERS[bot]} con su ${botMatch.pos} (${botMatch.value})!`, "#10b981");
@@ -511,7 +546,6 @@ function executeBotRounds() {
                         if (targetRack[i].revealed || targetRack[i].cut) { maxBound = targetRack[i].value; break; }
                     }
 
-                    // Extraer los candidatos válidos usando reversedHand (de derecha a izquierda)
                     const validCandidates = reversedHand.filter(c => {
                         if (c.value < minBound || c.value > maxBound) return false;
 
@@ -522,7 +556,6 @@ function executeBotRounds() {
                         return remainingInOtherRacks > 0;
                     });
 
-                    // Deduplicar: Solo evaluar la copia más a la derecha de cada número posible
                     const uniqueCandidates = [];
                     const seen = new Set();
                     for (let cand of validCandidates) {
@@ -546,7 +579,6 @@ function executeBotRounds() {
             }
 
             if (possibleMoves.length > 0) {
-                // Ordenar por menor ancho de rango (mayor certeza matemática)
                 possibleMoves.sort((a, b) => a.rangeWidth - b.rangeWidth);
                 const bestMove = possibleMoves[0];
 
@@ -581,7 +613,6 @@ function executeBotRounds() {
                 }
                 executed = true;
             } else {
-                // Contingencia: Si no hay opciones, arriesgar el valor más bajo de la mano (usando la copia más a la derecha)
                 const fallbackCandidate = reversedHand.find(c => c.value === botHand[0].value);
                 const fallbackTargetP = (bot + 1) % 4;
                 const fallbackCard = state.matrix[fallbackTargetP].find(c => !c.cut && !c.revealed) || state.matrix[fallbackTargetP].find(c => !c.cut);
