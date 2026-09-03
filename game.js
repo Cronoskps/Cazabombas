@@ -404,10 +404,12 @@ function executeBotRounds() {
         const botHand = state.matrix[bot].filter(c => !c.cut);
         if (botHand.length === 0) continue;
 
+        // TÁCTICA AVANZADA: Buscar siempre de derecha a izquierda en la propia mano
+        const reversedHand = [...botHand].reverse();
         let executed = false;
 
         // PRIORIDAD 1: Pistas visibles públicas legítimas
-        for (let myCard of botHand) {
+        for (let myCard of reversedHand) {
             for (let otherP = 0; otherP < 4; otherP++) {
                 if (otherP === bot) continue;
                 const match = state.matrix[otherP].find(c => !c.cut && (c.clue || (otherP !== 0 && c.revealed)) && c.value === myCard.value);
@@ -425,11 +427,11 @@ function executeBotRounds() {
             if (executed) break;
         }
 
-        // PRIORIDAD 2: Uso táctico de herramientas si hay dudas
+        // PRIORIDAD 2: Uso táctico de herramientas de apoyo
         if (!executed) {
             if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut === 4) {
                 const targetP = (bot + 1) % 4;
-                const queryVal = botHand[0].value;
+                const queryVal = botHand[0].value; // Consulta la carta más baja para barrer desde abajo
                 const count = state.matrix[targetP].filter(c => c.value === queryVal && !c.cut).length;
                 state.scannerUsed = true;
                 log(`📡 ${PLAYERS[bot]} activa el Escáner de Frecuencia con ${PLAYERS[targetP]}: confirma que tiene ${count} copia(s) del número ${queryVal}.`, "#38bdf8");
@@ -463,9 +465,10 @@ function executeBotRounds() {
                             if (targetCard.value === opt1 || targetCard.value === opt2) {
                                 targetCard.clue = true;
                                 targetCard.revealed = true;
-                                log(`🔍 ${PLAYERS[bot]} usa Detector Dual sobre ${PLAYERS[targetP]} (${targetCard.pos}) preguntando si es ${opt1} o ${opt2}: ¡CONFIRMADO! Es ${targetCard.value}.`, "#38bdf8");
+                                log(`🔍 ${PLAYERS[bot]} usa Detector Dual sobre ${PLAYERS[targetP]} (${targetCard.pos}) [${opt1} o ${opt2}]: ¡CONFIRMADO! Es ${targetCard.value}.`, "#38bdf8");
 
-                                const botMatch = botHand.find(c => c.value === targetCard.value);
+                                // Si acierta, busca la copia más a la derecha en su mano para el corte simultáneo
+                                const botMatch = reversedHand.find(c => c.value === targetCard.value);
                                 if (botMatch) {
                                     log(`✂️ ¡Corte simultáneo de ${PLAYERS[bot]} con su ${botMatch.pos} (${botMatch.value})!`, "#10b981");
                                     targetCard.cut = true;
@@ -486,11 +489,10 @@ function executeBotRounds() {
             }
         }
 
-        // PRIORIDAD 3: Deducción priorizada por heurística de rango mínimo
+        // PRIORIDAD 3: Corte obligatorio por heurística de rango y descarte estricto de inventario
         if (!executed) {
             let possibleMoves = [];
 
-            // Recopilar todas las jugadas legales posibles en la mesa
             for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
                 const targetP = (bot + targetOffset) % 4;
                 const targetRack = state.matrix[targetP];
@@ -509,9 +511,28 @@ function executeBotRounds() {
                         if (targetRack[i].revealed || targetRack[i].cut) { maxBound = targetRack[i].value; break; }
                     }
 
-                    const validCandidates = botHand.filter(c => c.value >= minBound && c.value <= maxBound);
+                    // Extraer los candidatos válidos usando reversedHand (de derecha a izquierda)
+                    const validCandidates = reversedHand.filter(c => {
+                        if (c.value < minBound || c.value > maxBound) return false;
 
-                    for (let validCandidate of validCandidates) {
+                        const inv = state.inventory[c.value];
+                        const copiesInMyHand = botHand.filter(h => h.value === c.value).length;
+                        const remainingInOtherRacks = inv.total - inv.cut - copiesInMyHand;
+
+                        return remainingInOtherRacks > 0;
+                    });
+
+                    // Deduplicar: Solo evaluar la copia más a la derecha de cada número posible
+                    const uniqueCandidates = [];
+                    const seen = new Set();
+                    for (let cand of validCandidates) {
+                        if (!seen.has(cand.value)) {
+                            seen.add(cand.value);
+                            uniqueCandidates.push(cand);
+                        }
+                    }
+
+                    for (let validCandidate of uniqueCandidates) {
                         possibleMoves.push({
                             targetP,
                             targetCard,
@@ -524,8 +545,8 @@ function executeBotRounds() {
                 }
             }
 
-            // Si existen jugadas viables, ordenarlas por la menor amplitud de rango (menor riesgo)
             if (possibleMoves.length > 0) {
+                // Ordenar por menor ancho de rango (mayor certeza matemática)
                 possibleMoves.sort((a, b) => a.rangeWidth - b.rangeWidth);
                 const bestMove = possibleMoves[0];
 
@@ -535,16 +556,15 @@ function executeBotRounds() {
                 const minBound = bestMove.minBound;
                 const maxBound = bestMove.maxBound;
 
-                // Activación de protección si el corte no es 100% seguro (rango > 0)
                 if (bestMove.rangeWidth > 0 && !state.pliersUsed && state.inventory[5] && state.inventory[5].cut === 4) {
                     state.pliersActive = true;
                     state.pliersUsed = true;
-                    log(`🔧 ${PLAYERS[bot]} activa los Alicates de Precisión para intentar un corte seguro.`, "#38bdf8");
+                    log(`🔧 ${PLAYERS[bot]} activa los Alicates de Precisión para proteger su intento de corte.`, "#38bdf8");
                     updateToolsState();
                 }
 
                 if (targetCard.value === chosenVal) {
-                    log(`${PLAYERS[bot]} deduce por rango óptimo [${minBound}-${maxBound}] y corta con éxito el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}).`, "#10b981");
+                    log(`${PLAYERS[bot]} deduce por rango acotado [${minBound}-${maxBound}] y corta con éxito el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}).`, "#10b981");
                     targetCard.cut = true;
                     targetCard.revealed = true;
                     bestMove.validCandidate.cut = true;
@@ -555,11 +575,30 @@ function executeBotRounds() {
                         state.pliersActive = false;
                     } else {
                         state.lives--;
-                        log(`${PLAYERS[bot]} dedujo rango óptimo [${minBound}-${maxBound}], probó el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}) y falló. Era un ${targetCard.value}.`, "#ef4444");
+                        log(`${PLAYERS[bot]} dedujo rango [${minBound}-${maxBound}], probó el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}) y falló. Era un ${targetCard.value}.`, "#ef4444");
                     }
                     targetCard.revealed = true;
                 }
                 executed = true;
+            } else {
+                // Contingencia: Si no hay opciones, arriesgar el valor más bajo de la mano (usando la copia más a la derecha)
+                const fallbackCandidate = reversedHand.find(c => c.value === botHand[0].value);
+                const fallbackTargetP = (bot + 1) % 4;
+                const fallbackCard = state.matrix[fallbackTargetP].find(c => !c.cut && !c.revealed) || state.matrix[fallbackTargetP].find(c => !c.cut);
+
+                if (fallbackCard) {
+                    if (fallbackCard.value === fallbackCandidate.value) {
+                        log(`${PLAYERS[bot]} arriesga al límite y corta con éxito el ${fallbackCandidate.value} en ${PLAYERS[fallbackTargetP]} (${fallbackCard.pos}).`, "#10b981");
+                        fallbackCard.cut = true;
+                        fallbackCard.revealed = true;
+                        fallbackCandidate.cut = true;
+                        state.inventory[fallbackCandidate.value].cut += 2;
+                    } else {
+                        state.lives--;
+                        log(`${PLAYERS[bot]} arriesgó al límite con ${fallbackCandidate.value} en ${PLAYERS[fallbackTargetP]} (${fallbackCard.pos}) y falló. Era un ${fallbackCard.value}.`, "#ef4444");
+                        fallbackCard.revealed = true;
+                    }
+                }
             }
         }
 
