@@ -773,3 +773,174 @@ function clearMatchHistory() {
         alert("Historial borrado.");
     }
 }
+
+// --- MÓDULO DE SIMULACIÓN MASIVA (TESTING) ---
+function runSimulations(iterations = 100) {
+    console.log(`🚀 Iniciando simulación de ${iterations} partidas a hipervelocidad...`);
+    let wins = 0;
+    let losses = 0;
+
+    // 1. Silenciamos temporalmente los logs visuales y actualizaciones de UI para que el navegador no se congele
+    const originalLog = log;
+    log = function () { };
+    const originalRenderBoard = renderBoard;
+    renderBoard = function () { };
+    const originalRenderTracker = renderTracker;
+    renderTracker = function () { };
+    const originalUpdateToolsState = updateToolsState;
+    updateToolsState = function () { };
+
+    for (let i = 0; i < iterations; i++) {
+        // Inicializar mesa limpia
+        initGame();
+
+        // Auto-seleccionar pista inicial para el Jugador 1
+        const p1Hand = state.matrix[0].filter(c => !c.isYellow);
+        const randomClue = p1Hand[Math.floor(Math.random() * p1Hand.length)];
+        randomClue.clue = true;
+        randomClue.revealed = true;
+        state.initialClueSelected = true;
+
+        let safetyCounter = 0;
+
+        // Bucle de partida (hasta ganar o perder)
+        while (state.active && safetyCounter < 300) {
+            safetyCounter++;
+
+            // Forzamos a que el bucle de IA incluya al Jugador 1 (bot = 0)
+            for (let bot = 0; bot <= 3; bot++) {
+                if (!state.active || state.lives <= 0) break;
+                const botHand = state.matrix[bot].filter(c => !c.cut);
+                if (botHand.length === 0) continue;
+
+                let executed = false;
+                const reversedHand = [...botHand].reverse();
+
+                // Autocortes (Prioridad 0)
+                const countByValue = {};
+                botHand.forEach(c => countByValue[c.value] = (countByValue[c.value] || 0) + 1);
+                for (const valStr in countByValue) {
+                    const val = parseFloat(valStr);
+                    const count = countByValue[val];
+                    const inv = state.inventory[val];
+                    if (count === 4 || (count === 2 && inv.total === 4 && inv.cut === 2) || (count === 2 && inv.total === 2 && inv.cut === 0)) {
+                        const cardsToCut = botHand.filter(c => c.value === val);
+                        cardsToCut.forEach(c => { c.cut = true; c.revealed = true; });
+                        inv.cut += cardsToCut.length;
+                        executed = true;
+                        break;
+                    }
+                }
+                if (executed) { checkGameState(); continue; }
+
+                // Pistas Públicas (Prioridad 1)
+                for (let myCard of reversedHand) {
+                    for (let otherP = 0; otherP < 4; otherP++) {
+                        if (otherP === bot) continue;
+                        const match = state.matrix[otherP].find(c => !c.cut && (c.clue || (otherP !== 0 && c.revealed)) && c.value === myCard.value);
+                        if (match) {
+                            match.cut = true; match.revealed = true;
+                            myCard.cut = true; myCard.revealed = true;
+                            state.inventory[myCard.value].cut += 2;
+                            executed = true;
+                            break;
+                        }
+                    }
+                    if (executed) break;
+                }
+                if (executed) { checkGameState(); continue; }
+
+                // Cálculo de probabilidad (Prioridad 3 - Omitimos herramientas para la simulación de estrés)
+                if (!executed) {
+                    const ALL_VALUES = [1, 2, 3, 4, 4.5, 5, 6, 7, 8, 9, 9.5, 10, 11, 12];
+                    let possibleMoves = [];
+
+                    for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
+                        const targetP = (bot + targetOffset) % 4;
+                        const targetRack = state.matrix[targetP];
+                        const hiddenCards = targetRack.filter(c => !c.cut && !c.revealed);
+
+                        for (let targetCard of hiddenCards) {
+                            const targetIdx = LETTERS.indexOf(targetCard.pos);
+                            let minBound = 1;
+                            for (let idx = targetIdx - 1; idx >= 0; idx--) { if (targetRack[idx].revealed || targetRack[idx].cut) { minBound = targetRack[idx].value; break; } }
+                            let maxBound = 12;
+                            for (let idx = targetIdx + 1; idx < targetRack.length; idx++) { if (targetRack[idx].revealed || targetRack[idx].cut) { maxBound = targetRack[idx].value; break; } }
+
+                            let totalRemainingInRange = 0;
+                            for (let v of ALL_VALUES) {
+                                if (v >= minBound && v <= maxBound) {
+                                    const copiesInMyHand = botHand.filter(h => h.value === v).length;
+                                    const remaining = state.inventory[v].total - state.inventory[v].cut - copiesInMyHand;
+                                    if (remaining > 0) totalRemainingInRange += remaining;
+                                }
+                            }
+
+                            if (totalRemainingInRange === 0) continue;
+
+                            const uniqueVals = [...new Set(botHand.map(c => c.value))];
+                            for (let val of uniqueVals) {
+                                if (val < minBound || val > maxBound) continue;
+                                const copiesInMyHand = botHand.filter(h => h.value === val).length;
+                                const remainingInOtherRacks = state.inventory[val].total - state.inventory[val].cut - copiesInMyHand;
+
+                                if (remainingInOtherRacks > 0) {
+                                    const hitChance = remainingInOtherRacks / totalRemainingInRange;
+                                    possibleMoves.push({ targetP, targetCard, guessValue: val, hitChance, rangeWidth: maxBound - minBound });
+                                }
+                            }
+                        }
+                    }
+
+                    if (possibleMoves.length > 0) {
+                        possibleMoves.sort((a, b) => {
+                            if (b.hitChance !== a.hitChance) return b.hitChance - a.hitChance;
+                            return a.rangeWidth - b.rangeWidth;
+                        });
+                        const bestMove = possibleMoves[0];
+                        const validCandidateCard = reversedHand.find(c => c.value === bestMove.guessValue);
+
+                        if (bestMove.targetCard.value === bestMove.guessValue) {
+                            bestMove.targetCard.cut = true; bestMove.targetCard.revealed = true;
+                            validCandidateCard.cut = true;
+                            state.inventory[bestMove.guessValue].cut += 2;
+                        } else {
+                            state.lives--;
+                            bestMove.targetCard.revealed = true;
+                        }
+                    } else {
+                        const fallbackCandidate = reversedHand[0];
+                        const fallbackTargetP = (bot + 1) % 4;
+                        const fallbackCard = state.matrix[fallbackTargetP].find(c => !c.cut && !c.revealed) || state.matrix[fallbackTargetP].find(c => !c.cut);
+
+                        if (fallbackCard) {
+                            if (fallbackCard.value === fallbackCandidate.value) {
+                                fallbackCard.cut = true; fallbackCard.revealed = true; fallbackCandidate.cut = true;
+                                state.inventory[fallbackCandidate.value].cut += 2;
+                            } else {
+                                state.lives--; fallbackCard.revealed = true;
+                            }
+                        }
+                    }
+                }
+                checkGameState();
+            }
+        }
+
+        if (state.lives > 0) wins++;
+        else losses++;
+    }
+
+    // 2. Restaurar funciones originales
+    log = originalLog;
+    renderBoard = originalRenderBoard;
+    renderTracker = originalRenderTracker;
+    updateToolsState = originalUpdateToolsState;
+
+    const winRate = ((wins / iterations) * 100).toFixed(1);
+    console.log(`📊 RESULTADOS DE ${iterations} PARTIDAS:`);
+    console.log(`✅ Victorias: ${wins}`);
+    console.log(`❌ Derrotas: ${losses}`);
+    console.log(`🏆 Win Rate: ${winRate}%`);
+    alert(`Simulación completada. Win Rate de la IA: ${winRate}% (Revisa la consola para más detalles).`);
+}
