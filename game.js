@@ -415,7 +415,8 @@ function executeBotRounds() {
             const count = countByValue[val];
             const inv = state.inventory[val];
 
-            if (count === 4 || (count === 2 && inv.cut === 2)) {
+            // Regla estricta: Solo corta si tiene los 4, o si tiene los últimos 2 restantes en el juego
+            if (count === 4 || (count === 2 && inv.total === 4 && inv.cut === 2) || (count === 2 && inv.total === 2 && inv.cut === 0)) {
                 const cardsToCut = botHand.filter(c => c.value === val);
                 const positions = cardsToCut.map(c => c.pos).join(" y ");
 
@@ -440,7 +441,6 @@ function executeBotRounds() {
             continue;
         }
 
-        // Táctica física: Mano invertida solo para elegir el cable a cortar
         const reversedHand = [...botHand].reverse();
 
         // PRIORIDAD 1: Pistas visibles públicas legítimas
@@ -462,7 +462,7 @@ function executeBotRounds() {
             if (executed) break;
         }
 
-        // PRIORIDAD 2: Uso táctico de herramientas de apoyo
+        // PRIORIDAD 2: Uso táctico de herramientas
         if (!executed) {
             if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut === 4) {
                 const targetP = (bot + 1) % 4;
@@ -511,6 +511,22 @@ function executeBotRounds() {
                                 }
                             } else {
                                 log(`🔍 ${PLAYERS[bot]} usa Detector Dual sobre ${PLAYERS[targetP]} (${targetCard.pos}) [${opt1} o ${opt2}]: NEGATIVO.`, "#94a3b8");
+
+                                // ¡Deducción de cable amarillo si los enteros fallan!
+                                if (opt2 - opt1 === 1) {
+                                    const deducedYellow = opt1 + 0.5;
+                                    log(`💡 ¡DEDUCCIÓN MAGISTRAL! Por descarte, la casilla ${targetCard.pos} de ${PLAYERS[targetP]} es ${deducedYellow}🟡.`, "#eab308");
+                                    targetCard.clue = true;
+                                    targetCard.revealed = true;
+
+                                    const botMatch = reversedHand.find(c => c.value === deducedYellow);
+                                    if (botMatch) {
+                                        log(`✂️ ¡Corte simultáneo de ${PLAYERS[bot]} con su ${botMatch.pos} (${botMatch.value})!`, "#10b981");
+                                        targetCard.cut = true;
+                                        botMatch.cut = true;
+                                        state.inventory[deducedYellow].cut += 2;
+                                    }
+                                }
                             }
 
                             updateToolsState();
@@ -523,8 +539,9 @@ function executeBotRounds() {
             }
         }
 
-        // PRIORIDAD 3: Corte por heurística de rango y descarte estricto de inventario
+        // PRIORIDAD 3: Corte obligado basado en Cálculo de Probabilidad (hitChance)
         if (!executed) {
+            const ALL_VALUES = [1, 2, 3, 4, 4.5, 5, 6, 7, 8, 9, 9.5, 10, 11, 12];
             let possibleMoves = [];
 
             for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
@@ -545,23 +562,35 @@ function executeBotRounds() {
                         if (targetRack[i].revealed || targetRack[i].cut) { maxBound = targetRack[i].value; break; }
                     }
 
-                    // PENSAMIENTO: Se extraen los valores de la mano normal (de menor a mayor)
-                    const uniqueVals = [...new Set(botHand.map(c => c.value))];
+                    // 1. Calcular cuántos cables totales caben lógicamente en esta casilla
+                    let totalRemainingInRange = 0;
+                    for (let v of ALL_VALUES) {
+                        if (v >= minBound && v <= maxBound) {
+                            const copiesInMyHand = botHand.filter(h => h.value === v).length;
+                            const remaining = state.inventory[v].total - state.inventory[v].cut - copiesInMyHand;
+                            if (remaining > 0) totalRemainingInRange += remaining;
+                        }
+                    }
 
+                    if (totalRemainingInRange === 0) continue;
+
+                    // 2. Calcular la probabilidad de éxito de cada carta que tengo en mano para esta casilla
+                    const uniqueVals = [...new Set(botHand.map(c => c.value))];
                     for (let val of uniqueVals) {
                         if (val < minBound || val > maxBound) continue;
 
-                        const inv = state.inventory[val];
                         const copiesInMyHand = botHand.filter(h => h.value === val).length;
-                        const remainingInOtherRacks = inv.total - inv.cut - copiesInMyHand;
+                        const remainingInOtherRacks = state.inventory[val].total - state.inventory[val].cut - copiesInMyHand;
 
                         if (remainingInOtherRacks > 0) {
+                            const hitChance = remainingInOtherRacks / totalRemainingInRange;
                             possibleMoves.push({
                                 targetP,
                                 targetCard,
                                 guessValue: val,
                                 minBound,
                                 maxBound,
+                                hitChance: hitChance,
                                 rangeWidth: maxBound - minBound
                             });
                         }
@@ -570,28 +599,29 @@ function executeBotRounds() {
             }
 
             if (possibleMoves.length > 0) {
-                // Ordenar por menor ancho de rango. Al empatar, la lista mantiene el número más bajo primero
-                possibleMoves.sort((a, b) => a.rangeWidth - b.rangeWidth);
-                const bestMove = possibleMoves[0];
+                // ORDEN DE INTELIGENCIA: Mayor % de probabilidad primero. En empate, menor ancho de rango.
+                possibleMoves.sort((a, b) => {
+                    if (b.hitChance !== a.hitChance) return b.hitChance - a.hitChance;
+                    return a.rangeWidth - b.rangeWidth;
+                });
 
+                const bestMove = possibleMoves[0];
                 const chosenVal = bestMove.guessValue;
                 const targetCard = bestMove.targetCard;
                 const targetP = bestMove.targetP;
-                const minBound = bestMove.minBound;
-                const maxBound = bestMove.maxBound;
 
-                // EJECUCIÓN FÍSICA: Se selecciona la carta desde reversedHand (la de la derecha)
                 const validCandidateCard = reversedHand.find(c => c.value === chosenVal);
 
-                if (bestMove.rangeWidth > 0 && !state.pliersUsed && state.inventory[5] && state.inventory[5].cut === 4) {
+                if (bestMove.hitChance < 1 && !state.pliersUsed && state.inventory[5] && state.inventory[5].cut === 4) {
                     state.pliersActive = true;
                     state.pliersUsed = true;
-                    log(`🔧 ${PLAYERS[bot]} activa los Alicates de Precisión para proteger su intento de corte.`, "#38bdf8");
+                    log(`🔧 ${PLAYERS[bot]} activa los Alicates de Precisión ante un corte de riesgo.`, "#38bdf8");
                     updateToolsState();
                 }
 
                 if (targetCard.value === chosenVal) {
-                    log(`${PLAYERS[bot]} deduce por rango acotado [${minBound}-${maxBound}] y corta con éxito el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}).`, "#10b981");
+                    const probabilityStr = (bestMove.hitChance * 100).toFixed(0);
+                    log(`${PLAYERS[bot]} calculó un ${probabilityStr}% de éxito y corta el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}).`, "#10b981");
                     targetCard.cut = true;
                     targetCard.revealed = true;
                     validCandidateCard.cut = true;
@@ -602,27 +632,27 @@ function executeBotRounds() {
                         state.pliersActive = false;
                     } else {
                         state.lives--;
-                        log(`${PLAYERS[bot]} dedujo rango [${minBound}-${maxBound}], probó el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}) y falló. Era un ${targetCard.value}.`, "#ef4444");
+                        const probabilityStr = (bestMove.hitChance * 100).toFixed(0);
+                        log(`${PLAYERS[bot]} arriesgó con un ${probabilityStr}% de acierto. Probó el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}) y falló. Era un ${targetCard.value}.`, "#ef4444");
                     }
                     targetCard.revealed = true;
                 }
                 executed = true;
             } else {
-                // Contingencia en caso de que no queden jugadas viables por inventario
                 const fallbackCandidate = reversedHand[0];
                 const fallbackTargetP = (bot + 1) % 4;
                 const fallbackCard = state.matrix[fallbackTargetP].find(c => !c.cut && !c.revealed) || state.matrix[fallbackTargetP].find(c => !c.cut);
 
                 if (fallbackCard) {
                     if (fallbackCard.value === fallbackCandidate.value) {
-                        log(`${PLAYERS[bot]} arriesga al límite y corta con éxito el ${fallbackCandidate.value} en ${PLAYERS[fallbackTargetP]} (${fallbackCard.pos}).`, "#10b981");
+                        log(`${PLAYERS[bot]} arriesga a ciegas y corta con éxito el ${fallbackCandidate.value} en ${PLAYERS[fallbackTargetP]} (${fallbackCard.pos}).`, "#10b981");
                         fallbackCard.cut = true;
                         fallbackCard.revealed = true;
                         fallbackCandidate.cut = true;
                         state.inventory[fallbackCandidate.value].cut += 2;
                     } else {
                         state.lives--;
-                        log(`${PLAYERS[bot]} arriesgó al límite con ${fallbackCandidate.value} en ${PLAYERS[fallbackTargetP]} (${fallbackCard.pos}) y falló. Era un ${fallbackCard.value}.`, "#ef4444");
+                        log(`${PLAYERS[bot]} arriesgó a ciegas con ${fallbackCandidate.value} en ${PLAYERS[fallbackTargetP]} (${fallbackCard.pos}) y falló. Era un ${fallbackCard.value}.`, "#ef4444");
                         fallbackCard.revealed = true;
                     }
                 }
