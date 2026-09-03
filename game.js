@@ -62,13 +62,30 @@ function initGame() {
         state.matrix[p] = hand;
     }
 
-    // Pistas iniciales de los bots (solo números enteros)
-    [1, 2, 3].forEach(botIdx => {
-        const standardCards = state.matrix[botIdx].filter(c => !c.isYellow);
-        const card = standardCards[Math.floor(Math.random() * standardCards.length)];
-        card.clue = true;
-        card.revealed = true;
-    });
+    // Pistas iniciales únicas de los bots (solo números enteros y sin repetir entre ellos)
+    let usedClueValues = [];
+    for (let bot = 1; bot <= 3; bot++) {
+        const botHand = state.matrix[bot];
+
+        // 1. Filtrar: no usar valores que ya eligió otro bot y evitar cables amarillos
+        let validClues = botHand.filter(c => !usedClueValues.includes(c.value) && !c.isYellow);
+
+        // 2. Contingencia: Si el bot solo tiene números ya usados, quitamos el filtro de repetición
+        if (validClues.length === 0) {
+            validClues = botHand.filter(c => !c.isYellow);
+            if (validClues.length === 0) validClues = botHand; // Contingencia absoluta
+        }
+
+        // 3. Elegir una carta al azar entre las opciones válidas
+        const randomIndex = Math.floor(Math.random() * validClues.length);
+        const chosenClue = validClues[randomIndex];
+
+        chosenClue.clue = true;
+        chosenClue.revealed = true;
+
+        // 4. Registrar este valor para que el siguiente bot no lo copie
+        usedClueValues.push(chosenClue.value);
+    }
 
     document.getElementById('terminal').innerHTML = '';
     log("Partida configurada con 52 cables inmutables repartidos.", "#38bdf8");
