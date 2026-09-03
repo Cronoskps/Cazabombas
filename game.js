@@ -774,13 +774,13 @@ function clearMatchHistory() {
     }
 }
 
-// --- MÓDULO DE SIMULACIÓN MASIVA (TESTING) ---
+// --- MÓDULO DE SIMULACIÓN MASIVA (TESTING FULL IA) ---
 function runSimulations(iterations = 100) {
-    console.log(`🚀 Iniciando simulación de ${iterations} partidas a hipervelocidad...`);
+    console.log(`🚀 Iniciando simulación de ${iterations} partidas CON HERRAMIENTAS ACTIVADAS...`);
     let wins = 0;
     let losses = 0;
 
-    // 1. Silenciamos temporalmente los logs visuales y actualizaciones de UI para que el navegador no se congele
+    // Silenciar UI y el historial temporalmente para no congelar el navegador ni ensuciar el clipboard
     const originalLog = log;
     log = function () { };
     const originalRenderBoard = renderBoard;
@@ -789,12 +789,12 @@ function runSimulations(iterations = 100) {
     renderTracker = function () { };
     const originalUpdateToolsState = updateToolsState;
     updateToolsState = function () { };
+    const originalSaveFinishedGame = saveFinishedGame;
+    saveFinishedGame = function () { };
 
     for (let i = 0; i < iterations; i++) {
-        // Inicializar mesa limpia
         initGame();
 
-        // Auto-seleccionar pista inicial para el Jugador 1
         const p1Hand = state.matrix[0].filter(c => !c.isYellow);
         const randomClue = p1Hand[Math.floor(Math.random() * p1Hand.length)];
         randomClue.clue = true;
@@ -803,11 +803,9 @@ function runSimulations(iterations = 100) {
 
         let safetyCounter = 0;
 
-        // Bucle de partida (hasta ganar o perder)
-        while (state.active && safetyCounter < 300) {
+        while (state.active && safetyCounter < 500) {
             safetyCounter++;
 
-            // Forzamos a que el bucle de IA incluya al Jugador 1 (bot = 0)
             for (let bot = 0; bot <= 3; bot++) {
                 if (!state.active || state.lives <= 0) break;
                 const botHand = state.matrix[bot].filter(c => !c.cut);
@@ -816,7 +814,7 @@ function runSimulations(iterations = 100) {
                 let executed = false;
                 const reversedHand = [...botHand].reverse();
 
-                // Autocortes (Prioridad 0)
+                // PRIORIDAD 0: Autocortes
                 const countByValue = {};
                 botHand.forEach(c => countByValue[c.value] = (countByValue[c.value] || 0) + 1);
                 for (const valStr in countByValue) {
@@ -833,7 +831,7 @@ function runSimulations(iterations = 100) {
                 }
                 if (executed) { checkGameState(); continue; }
 
-                // Pistas Públicas (Prioridad 1)
+                // PRIORIDAD 1: Pistas Públicas
                 for (let myCard of reversedHand) {
                     for (let otherP = 0; otherP < 4; otherP++) {
                         if (otherP === bot) continue;
@@ -850,7 +848,60 @@ function runSimulations(iterations = 100) {
                 }
                 if (executed) { checkGameState(); continue; }
 
-                // Cálculo de probabilidad (Prioridad 3 - Omitimos herramientas para la simulación de estrés)
+                // PRIORIDAD 2: Herramientas 
+                if (!executed) {
+                    if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut === 4) {
+                        const targetP = (bot + 1) % 4;
+                        state.scannerUsed = true;
+                        executed = true;
+                    }
+                    else if (state.dualCharges > 0) {
+                        for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
+                            const targetP = (bot + targetOffset) % 4;
+                            const targetRack = state.matrix[targetP];
+                            const hiddenCards = targetRack.filter(c => !c.cut && !c.revealed);
+
+                            for (let targetCard of hiddenCards) {
+                                const targetIdx = LETTERS.indexOf(targetCard.pos);
+                                let minBound = 1;
+                                for (let idx = targetIdx - 1; idx >= 0; idx--) { if (targetRack[idx].revealed || targetRack[idx].cut) { minBound = targetRack[idx].value; break; } }
+                                let maxBound = 12;
+                                for (let idx = targetIdx + 1; idx < targetRack.length; idx++) { if (targetRack[idx].revealed || targetRack[idx].cut) { maxBound = targetRack[idx].value; break; } }
+
+                                if (maxBound - minBound <= 1.5 && minBound !== maxBound) {
+                                    state.dualCharges--;
+                                    const opt1 = minBound;
+                                    const opt2 = maxBound;
+
+                                    if (targetCard.value === opt1 || targetCard.value === opt2) {
+                                        targetCard.clue = true; targetCard.revealed = true;
+                                        const botMatch = reversedHand.find(c => c.value === targetCard.value);
+                                        if (botMatch) {
+                                            targetCard.cut = true; botMatch.cut = true;
+                                            state.inventory[targetCard.value].cut += 2;
+                                        }
+                                    } else {
+                                        if (opt2 - opt1 === 1) {
+                                            const deducedYellow = opt1 + 0.5;
+                                            targetCard.clue = true; targetCard.revealed = true;
+                                            const botMatch = reversedHand.find(c => c.value === deducedYellow);
+                                            if (botMatch) {
+                                                targetCard.cut = true; botMatch.cut = true;
+                                                state.inventory[deducedYellow].cut += 2;
+                                            }
+                                        }
+                                    }
+                                    executed = true;
+                                    break;
+                                }
+                            }
+                            if (executed) break;
+                        }
+                    }
+                }
+                if (executed) { checkGameState(); continue; }
+
+                // PRIORIDAD 3: Cálculo de probabilidad (hitChance) + Alicates
                 if (!executed) {
                     const ALL_VALUES = [1, 2, 3, 4, 4.5, 5, 6, 7, 8, 9, 9.5, 10, 11, 12];
                     let possibleMoves = [];
@@ -900,12 +951,22 @@ function runSimulations(iterations = 100) {
                         const bestMove = possibleMoves[0];
                         const validCandidateCard = reversedHand.find(c => c.value === bestMove.guessValue);
 
+                        // Uso de Alicates de Precisión
+                        if (bestMove.hitChance < 1 && !state.pliersUsed && state.inventory[5] && state.inventory[5].cut === 4) {
+                            state.pliersActive = true;
+                            state.pliersUsed = true;
+                        }
+
                         if (bestMove.targetCard.value === bestMove.guessValue) {
                             bestMove.targetCard.cut = true; bestMove.targetCard.revealed = true;
                             validCandidateCard.cut = true;
                             state.inventory[bestMove.guessValue].cut += 2;
                         } else {
-                            state.lives--;
+                            if (state.pliersActive) {
+                                state.pliersActive = false;
+                            } else {
+                                state.lives--;
+                            }
                             bestMove.targetCard.revealed = true;
                         }
                     } else {
@@ -931,16 +992,17 @@ function runSimulations(iterations = 100) {
         else losses++;
     }
 
-    // 2. Restaurar funciones originales
+    // Restaurar funciones originales
     log = originalLog;
     renderBoard = originalRenderBoard;
     renderTracker = originalRenderTracker;
     updateToolsState = originalUpdateToolsState;
+    saveFinishedGame = originalSaveFinishedGame;
 
     const winRate = ((wins / iterations) * 100).toFixed(1);
-    console.log(`📊 RESULTADOS DE ${iterations} PARTIDAS:`);
+    console.log(`📊 RESULTADOS DE ${iterations} PARTIDAS (CON HERRAMIENTAS):`);
     console.log(`✅ Victorias: ${wins}`);
     console.log(`❌ Derrotas: ${losses}`);
     console.log(`🏆 Win Rate: ${winRate}%`);
-    alert(`Simulación completada. Win Rate de la IA: ${winRate}% (Revisa la consola para más detalles).`);
+    alert(`Simulación completada. Win Rate de la IA: ${winRate}%. Revisa la consola (F12).`);
 }
