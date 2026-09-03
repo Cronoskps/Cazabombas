@@ -1,5 +1,5 @@
 const LETTERS = "ABCDEFGHIJKLM";
-const PLAYERS = ["Tu Atril (P1)", "Optimus (IA 2)", "Wolverine (IA 3)", "Deadpool (IA 4)"];
+const PLAYERS = ["Tu Atril (P1)", "Mateo (IA 2)", "Valentina (IA 3)", "Lucas (IA 4)"];
 
 let state = {
     lives: 3,
