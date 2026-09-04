@@ -423,7 +423,7 @@ function executeBotRounds() {
 
         let executed = false;
 
-        // PRIORIDAD 0: Autocorte de pares o cuartetos propios
+        // PRIORIDAD 0: Autocortes de pares o cuartetos
         const countByValue = {};
         botHand.forEach(c => countByValue[c.value] = (countByValue[c.value] || 0) + 1);
 
@@ -432,45 +432,32 @@ function executeBotRounds() {
             const count = countByValue[val];
             const inv = state.inventory[val];
 
-            // Regla estricta: Solo corta si tiene los 4, o si tiene los últimos 2 restantes en el juego
             if (count === 4 || (count === 2 && inv.total === 4 && inv.cut === 2) || (count === 2 && inv.total === 2 && inv.cut === 0)) {
                 const cardsToCut = botHand.filter(c => c.value === val);
                 const positions = cardsToCut.map(c => c.pos).join(" y ");
 
                 log(`✂️ ¡AUTOCORTE! ${PLAYERS[bot]} descarta automáticamente sus cables de valor ${val} (posiciones ${positions}).`, "#10b981");
 
-                cardsToCut.forEach(c => {
-                    c.cut = true;
-                    c.revealed = true;
-                });
-
+                cardsToCut.forEach(c => { c.cut = true; c.revealed = true; });
                 inv.cut += cardsToCut.length;
                 executed = true;
                 break;
             }
         }
 
-        if (executed) {
-            checkGameState();
-            renderTracker();
-            renderBoard();
-            updateToolsState();
-            continue;
-        }
+        if (executed) { checkGameState(); renderTracker(); renderBoard(); updateToolsState(); continue; }
 
         const reversedHand = [...botHand].reverse();
 
-        // PRIORIDAD 1: Pistas visibles públicas legítimas
+        // PRIORIDAD 1: Pistas Públicas Seguras
         for (let myCard of reversedHand) {
             for (let otherP = 0; otherP < 4; otherP++) {
                 if (otherP === bot) continue;
                 const match = state.matrix[otherP].find(c => !c.cut && (c.clue || (otherP !== 0 && c.revealed)) && c.value === myCard.value);
                 if (match) {
                     log(`${PLAYERS[bot]} ve la pista de ${PLAYERS[otherP]} (${match.pos}: ${match.value}) y corta con su ${myCard.pos}.`, "#0284c7");
-                    match.cut = true;
-                    match.revealed = true;
-                    myCard.cut = true;
-                    myCard.revealed = true;
+                    match.cut = true; match.revealed = true;
+                    myCard.cut = true; myCard.revealed = true;
                     state.inventory[myCard.value].cut += 2;
                     executed = true;
                     break;
@@ -479,84 +466,79 @@ function executeBotRounds() {
             if (executed) break;
         }
 
-        // PRIORIDAD 2: Uso táctico de herramientas
+        // PRIORIDAD 2: Herramientas (NUEVAS REGLAS OFICIALES DETECTOR DOBLE)
         if (!executed) {
             if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut === 4) {
                 const targetP = (bot + 1) % 4;
                 const queryVal = botHand[0].value;
                 const count = state.matrix[targetP].filter(c => c.value === queryVal && !c.cut).length;
                 state.scannerUsed = true;
-                log(`📡 ${PLAYERS[bot]} activa el Escáner de Frecuencia con ${PLAYERS[targetP]}: confirma que tiene ${count} copia(s) del número ${queryVal}.`, "#38bdf8");
+                log(`📡 ${PLAYERS[bot]} activa el Escáner con ${PLAYERS[targetP]}: confirma que tiene ${count} copia(s) del número ${queryVal}.`, "#38bdf8");
                 updateToolsState();
                 executed = true;
             }
             else if (state.dualCharges > 0) {
-                for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
-                    const targetP = (bot + targetOffset) % 4;
-                    const targetRack = state.matrix[targetP];
-                    const hiddenCards = targetRack.filter(c => !c.cut && !c.revealed);
+                let toolUsed = false;
+                const uniqueVals = [...new Set(reversedHand.map(c => c.value))];
 
-                    for (let targetCard of hiddenCards) {
-                        const targetIdx = LETTERS.indexOf(targetCard.pos);
+                for (let val of uniqueVals) {
+                    for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
+                        const targetP = (bot + targetOffset) % 4;
+                        const targetRack = state.matrix[targetP];
+                        const hiddenCards = targetRack.filter(c => !c.cut && !c.revealed);
 
-                        let minBound = 1;
-                        for (let i = targetIdx - 1; i >= 0; i--) {
-                            if (targetRack[i].revealed || targetRack[i].cut) { minBound = targetRack[i].value; break; }
+                        // Buscar todas las casillas donde este valor podría encajar matemáticamente
+                        const validSlots = [];
+                        for (let tc of hiddenCards) {
+                            const tIdx = LETTERS.indexOf(tc.pos);
+                            let minB = 1, maxB = 12;
+                            for (let i = tIdx - 1; i >= 0; i--) { if (targetRack[i].revealed || targetRack[i].cut) { minB = targetRack[i].value; break; } }
+                            for (let i = tIdx + 1; i < targetRack.length; i++) { if (targetRack[i].revealed || targetRack[i].cut) { maxB = targetRack[i].value; break; } }
+                            if (val >= minB && val <= maxB) validSlots.push(tc);
                         }
 
-                        let maxBound = 12;
-                        for (let i = targetIdx + 1; i < targetRack.length; i++) {
-                            if (targetRack[i].revealed || targetRack[i].cut) { maxBound = targetRack[i].value; break; }
-                        }
-
-                        if (maxBound - minBound <= 1.5 && minBound !== maxBound) {
+                        // Si hay al menos 2 casillas donde el valor es posible, usamos el Detector
+                        if (validSlots.length >= 2) {
                             state.dualCharges--;
-                            const opt1 = minBound;
-                            const opt2 = maxBound;
+                            const c1 = validSlots[0];
+                            const c2 = validSlots[1];
 
-                            if (targetCard.value === opt1 || targetCard.value === opt2) {
-                                targetCard.clue = true;
-                                targetCard.revealed = true;
-                                log(`🔍 ${PLAYERS[bot]} usa Detector Dual sobre ${PLAYERS[targetP]} (${targetCard.pos}) [${opt1} o ${opt2}]: ¡CONFIRMADO! Es ${targetCard.value}.`, "#38bdf8");
+                            log(`🔍 ${PLAYERS[bot]} usa Detector Doble sobre ${PLAYERS[targetP]}: ¿El número ${val} está en ${c1.pos} o ${c2.pos}?`, "#38bdf8");
 
-                                const botMatch = reversedHand.find(c => c.value === targetCard.value);
-                                if (botMatch) {
-                                    log(`✂️ ¡Corte simultáneo de ${PLAYERS[bot]} con su ${botMatch.pos} (${botMatch.value})!`, "#10b981");
-                                    targetCard.cut = true;
-                                    botMatch.cut = true;
-                                    state.inventory[targetCard.value].cut += 2;
-                                }
+                            if (c1.value === val || c2.value === val) {
+                                const hitCard = (c1.value === val) ? c1 : c2;
+                                log(`✅ ¡ÉXITO! ${PLAYERS[targetP]} confirma y corta la casilla ${hitCard.pos}.`, "#10b981");
+                                hitCard.cut = true;
+                                hitCard.revealed = true;
+                                const botMatch = reversedHand.find(c => c.value === val);
+                                botMatch.cut = true;
+                                state.inventory[val].cut += 2;
                             } else {
-                                log(`🔍 ${PLAYERS[bot]} usa Detector Dual sobre ${PLAYERS[targetP]} (${targetCard.pos}) [${opt1} o ${opt2}]: NEGATIVO.`, "#94a3b8");
+                                state.lives--;
+                                log(`❌ NEGATIVO. Pierden 1 vida, pero se revela información vital...`, "#ef4444");
 
-                                // ¡Deducción de cable amarillo si los enteros fallan!
-                                if (opt2 - opt1 === 1) {
-                                    const deducedYellow = opt1 + 0.5;
-                                    log(`💡 ¡DEDUCCIÓN MAGISTRAL! Por descarte, la casilla ${targetCard.pos} de ${PLAYERS[targetP]} es ${deducedYellow}🟡.`, "#eab308");
-                                    targetCard.clue = true;
-                                    targetCard.revealed = true;
+                                // Regla oficial: El compañero revela uno de los cables que NO sea amarillo
+                                let cardToReveal = c1;
+                                if (c1.isYellow && !c2.isYellow) cardToReveal = c2;
+                                else if (c2.isYellow && !c1.isYellow) cardToReveal = c1;
 
-                                    const botMatch = reversedHand.find(c => c.value === deducedYellow);
-                                    if (botMatch) {
-                                        log(`✂️ ¡Corte simultáneo de ${PLAYERS[bot]} con su ${botMatch.pos} (${botMatch.value})!`, "#10b981");
-                                        targetCard.cut = true;
-                                        botMatch.cut = true;
-                                        state.inventory[deducedYellow].cut += 2;
-                                    }
-                                }
+                                cardToReveal.revealed = true;
+                                cardToReveal.clue = true;
+                                log(`💡 ${PLAYERS[targetP]} revela la casilla ${cardToReveal.pos}: es un ${cardToReveal.value}${cardToReveal.isYellow ? '🟡' : ''}.`, "#eab308");
                             }
 
                             updateToolsState();
+                            toolUsed = true;
                             executed = true;
                             break;
                         }
                     }
-                    if (executed) break;
+                    if (toolUsed) break;
                 }
             }
         }
 
-        // PRIORIDAD 3: Corte obligado basado en Cálculo de Probabilidad (hitChance)
+        // PRIORIDAD 3: Cálculo de probabilidad (hitChance)
         if (!executed) {
             const ALL_VALUES = [1, 2, 3, 4, 4.5, 5, 6, 7, 8, 9, 9.5, 10, 11, 12];
             let possibleMoves = [];
@@ -568,18 +550,11 @@ function executeBotRounds() {
 
                 for (let targetCard of hiddenCards) {
                     const targetIdx = LETTERS.indexOf(targetCard.pos);
-
                     let minBound = 1;
-                    for (let i = targetIdx - 1; i >= 0; i--) {
-                        if (targetRack[i].revealed || targetRack[i].cut) { minBound = targetRack[i].value; break; }
-                    }
-
+                    for (let idx = targetIdx - 1; idx >= 0; idx--) { if (targetRack[idx].revealed || targetRack[idx].cut) { minBound = targetRack[idx].value; break; } }
                     let maxBound = 12;
-                    for (let i = targetIdx + 1; i < targetRack.length; i++) {
-                        if (targetRack[i].revealed || targetRack[i].cut) { maxBound = targetRack[i].value; break; }
-                    }
+                    for (let idx = targetIdx + 1; idx < targetRack.length; idx++) { if (targetRack[idx].revealed || targetRack[idx].cut) { maxBound = targetRack[idx].value; break; } }
 
-                    // 1. Calcular cuántos cables totales caben lógicamente en esta casilla
                     let totalRemainingInRange = 0;
                     for (let v of ALL_VALUES) {
                         if (v >= minBound && v <= maxBound) {
@@ -591,43 +566,27 @@ function executeBotRounds() {
 
                     if (totalRemainingInRange === 0) continue;
 
-                    // 2. Calcular la probabilidad de éxito de cada carta que tengo en mano para esta casilla
                     const uniqueVals = [...new Set(botHand.map(c => c.value))];
                     for (let val of uniqueVals) {
                         if (val < minBound || val > maxBound) continue;
-
                         const copiesInMyHand = botHand.filter(h => h.value === val).length;
                         const remainingInOtherRacks = state.inventory[val].total - state.inventory[val].cut - copiesInMyHand;
 
                         if (remainingInOtherRacks > 0) {
                             const hitChance = remainingInOtherRacks / totalRemainingInRange;
-                            possibleMoves.push({
-                                targetP,
-                                targetCard,
-                                guessValue: val,
-                                minBound,
-                                maxBound,
-                                hitChance: hitChance,
-                                rangeWidth: maxBound - minBound
-                            });
+                            possibleMoves.push({ targetP, targetCard, guessValue: val, hitChance, rangeWidth: maxBound - minBound });
                         }
                     }
                 }
             }
 
             if (possibleMoves.length > 0) {
-                // ORDEN DE INTELIGENCIA: Mayor % de probabilidad primero. En empate, menor ancho de rango.
                 possibleMoves.sort((a, b) => {
                     if (b.hitChance !== a.hitChance) return b.hitChance - a.hitChance;
                     return a.rangeWidth - b.rangeWidth;
                 });
-
                 const bestMove = possibleMoves[0];
-                const chosenVal = bestMove.guessValue;
-                const targetCard = bestMove.targetCard;
-                const targetP = bestMove.targetP;
-
-                const validCandidateCard = reversedHand.find(c => c.value === chosenVal);
+                const validCandidateCard = reversedHand.find(c => c.value === bestMove.guessValue);
 
                 if (bestMove.hitChance < 1 && !state.pliersUsed && state.inventory[5] && state.inventory[5].cut === 4) {
                     state.pliersActive = true;
@@ -636,23 +595,23 @@ function executeBotRounds() {
                     updateToolsState();
                 }
 
-                if (targetCard.value === chosenVal) {
+                if (bestMove.targetCard.value === bestMove.guessValue) {
                     const probabilityStr = (bestMove.hitChance * 100).toFixed(0);
-                    log(`${PLAYERS[bot]} calculó un ${probabilityStr}% de éxito y corta el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}).`, "#10b981");
-                    targetCard.cut = true;
-                    targetCard.revealed = true;
+                    log(`${PLAYERS[bot]} calculó un ${probabilityStr}% de éxito y corta el ${bestMove.guessValue} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}).`, "#10b981");
+                    bestMove.targetCard.cut = true;
+                    bestMove.targetCard.revealed = true;
                     validCandidateCard.cut = true;
-                    state.inventory[chosenVal].cut += 2;
+                    state.inventory[bestMove.guessValue].cut += 2;
                 } else {
                     if (state.pliersActive) {
-                        log(`¡Fallo protegido por Alicates! ${PLAYERS[bot]} probó el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}) y era un ${targetCard.value}. No pierden vidas.`, "#38bdf8");
+                        log(`¡Fallo protegido por Alicates! ${PLAYERS[bot]} probó el ${bestMove.guessValue} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}) y era un ${bestMove.targetCard.value}. No pierden vidas.`, "#38bdf8");
                         state.pliersActive = false;
                     } else {
                         state.lives--;
                         const probabilityStr = (bestMove.hitChance * 100).toFixed(0);
-                        log(`${PLAYERS[bot]} arriesgó con un ${probabilityStr}% de acierto. Probó el ${chosenVal} en ${PLAYERS[targetP]} (${targetCard.pos}) y falló. Era un ${targetCard.value}.`, "#ef4444");
+                        log(`${PLAYERS[bot]} arriesgó con un ${probabilityStr}% de acierto. Probó el ${bestMove.guessValue} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}) y falló. Era un ${bestMove.targetCard.value}.`, "#ef4444");
                     }
-                    targetCard.revealed = true;
+                    bestMove.targetCard.revealed = true;
                 }
                 executed = true;
             } else {
