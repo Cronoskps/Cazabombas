@@ -339,36 +339,62 @@ function submitGuess(guess) {
 function triggerDualDetector() {
     if (state.dualCharges <= 0 || !state.active || !state.initialClueSelected) return;
 
-    const targetP = prompt("¿A qué compañero aplicar Detector Dual? (2: Mateo, 3: Valentina, 4: Lucas):");
+    const targetP = prompt("¿A qué compañero aplicar Detector Doble? (2: Mateo, 3: Valentina, 4: Lucas):");
     if (!targetP) return;
     const pIdx = parseInt(targetP) - 1;
     if (![1, 2, 3].includes(pIdx)) return;
 
-    const pos = prompt("Ingresa la letra de la posición a escanear (ej: D):").toUpperCase();
-    const card = state.matrix[pIdx].find(c => c.pos === pos && !c.cut);
-    if (!card) { alert("Posición no válida o ya cortada."); return; }
+    const guessValStr = prompt("Ingresa el NÚMERO que estás buscando (ej: 4 o 9.5):");
+    if (!guessValStr) return;
+    const guessVal = parseFloat(guessValStr);
+    if (isNaN(guessVal)) return;
 
-    const num1 = parseFloat(prompt("Primer número posible:"));
-    const num2 = parseFloat(prompt("Segundo número posible:"));
-    if (isNaN(num1) || isNaN(num2)) return;
+    const pos1Str = prompt("Ingresa la PRIMERA letra a escanear (ej: C):");
+    if (!pos1Str) return;
+    const pos1 = pos1Str.toUpperCase();
+    const card1 = state.matrix[pIdx].find(c => c.pos === pos1 && !c.cut);
+    if (!card1) { alert("Primera posición no válida o ya cortada."); return; }
+
+    const pos2Str = prompt("Ingresa la SEGUNDA letra a escanear (ej: D):");
+    if (!pos2Str) return;
+    const pos2 = pos2Str.toUpperCase();
+    if (pos1 === pos2) { alert("Debes elegir dos letras distintas."); return; }
+    const card2 = state.matrix[pIdx].find(c => c.pos === pos2 && !c.cut);
+    if (!card2) { alert("Segunda posición no válida o ya cortada."); return; }
 
     state.dualCharges--;
 
-    if (card.value === num1 || card.value === num2) {
-        card.clue = true;
-        card.revealed = true;
-        log(`🔍 Detector Dual: ¡CONFIRMADO! La casilla ${pos} de ${PLAYERS[pIdx]} es ${card.value}.`, "#38bdf8");
+    if (card1.value === guessVal || card2.value === guessVal) {
+        const hitCard = (card1.value === guessVal) ? card1 : card2;
+        hitCard.clue = true;
+        hitCard.revealed = true;
+        log(`🔍 Detector Doble: ¡ÉXITO! ${PLAYERS[pIdx]} confirma que el número ${guessVal} está en la casilla ${hitCard.pos}.`, "#38bdf8");
 
-        // Si el jugador humano tiene una copia activa del número confirmado, se realiza el corte simultáneo
-        const playerMatch = state.matrix[0].find(c => c.value === card.value && !c.cut);
+        // Búsqueda de derecha a izquierda en tu propio atril para el corte simultáneo táctico
+        const playerHandReversed = [...state.matrix[0].filter(c => !c.cut)].reverse();
+        const playerMatch = playerHandReversed.find(c => c.value === hitCard.value);
+
         if (playerMatch) {
             log(`✂️ ¡CORTE SIMULTÁNEO! Coincide con tu posición ${playerMatch.pos} (${playerMatch.value}). Ambos cables descartados.`, "#10b981");
-            card.cut = true;
+            hitCard.cut = true;
             playerMatch.cut = true;
-            state.inventory[card.value].cut += 2;
+            state.inventory[hitCard.value].cut += 2;
         }
     } else {
-        log(`🔍 Detector Dual: NEGATIVO. La casilla ${pos} de ${PLAYERS[pIdx]} NO es ni ${num1} ni ${num2}.`, "#94a3b8");
+        state.lives--;
+        log(`🔍 Detector Doble: NEGATIVO. Ni ${pos1} ni ${pos2} son un ${guessVal}. Pierden 1 vida.`, "#ef4444");
+
+        // Regla oficial: Se revela uno de los dos cables. Si uno es amarillo, se protege y se revela el otro.
+        let cardToReveal = card1;
+        if (card1.isYellow && !card2.isYellow) {
+            cardToReveal = card2;
+        } else if (card2.isYellow && !card1.isYellow) {
+            cardToReveal = card1;
+        }
+
+        cardToReveal.revealed = true;
+        cardToReveal.clue = true;
+        log(`💡 ${PLAYERS[pIdx]} se ve obligado a revelar la casilla ${cardToReveal.pos}: es un ${cardToReveal.value}${cardToReveal.isYellow ? '🟡' : ''}.`, "#eab308");
     }
 
     checkGameState();
@@ -378,7 +404,7 @@ function triggerDualDetector() {
 
     // El uso del detector consume el turno: avanzan los bots
     if (state.active && state.lives > 0) {
-        setTimeout(executeBotRounds, 800);
+        setTimeout(executeBotRounds, 1200);
     }
 }
 
