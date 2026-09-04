@@ -34,21 +34,40 @@
 
         <div class="tracker" id="tracker-bar"></div>
 
-        <div class="tools-bar">
-            <span class="tools-label">Herramientas:</span>
-            <button class="tool-btn" id="dual-detector-btn" onclick="triggerDualDetector()">🔍 Detector Doble (<span
-                    id="dual-charges">2</span>)</button>
-            <button class="tool-btn" id="self-cut-btn" onclick="triggerSelfPairCut()"
-                style="background:#0369a1; border-color:#38bdf8;">✂️ Cortar Pareja Propia</button>
-            <button class="tool-btn" id="reveal-reds-btn" onclick="triggerRevealReds()"
-                style="display:none; background:#b91c1c; border-color:#991b1b;">🔴 Revelar Rojos</button>
-            <button class="tool-btn" id="pliers-btn" disabled onclick="usePliers()">🔧 Alicates (2/4 del 5)</button>
-            <button class="tool-btn" id="scanner-btn" disabled onclick="useScanner()">📡 Escáner (2/4 del 8)</button>
-            <button class="tool-btn" id="advance-bots-btn"
-                style="display:none; background:#16a34a; border-color:#22c55e;" onclick="executeBotRounds()">▶️
-                Siguiente Ronda IA</button>
-            <button class="tool-btn" style="margin-left:auto; background:#475569; border-color:#64748b;"
-                onclick="returnToMenu()">🏠 Menú</button>
+        <!-- SECCIÓN DE CONTROLES DIVIDIDA -->
+        <div class="controls-section" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+
+            <!-- Barra 1: Acciones Innatas y Sistema -->
+            <div class="tools-bar" style="margin-bottom: 0;">
+                <span class="tools-label">Tu Turno:</span>
+                <button class="tool-btn" id="dual-detector-btn" onclick="triggerDualDetector()"
+                    style="background:#0f766e; border-color:#14b8a6;">🔍 Detector Doble (<span
+                        id="dual-charges">2</span>)</button>
+                <button class="tool-btn" id="self-cut-btn" onclick="triggerSelfPairCut()"
+                    style="background:#0369a1; border-color:#38bdf8;">✂️ Cortar Pareja Propia</button>
+                <button class="tool-btn" id="reveal-reds-btn" onclick="triggerRevealReds()"
+                    style="display:none; background:#b91c1c; border-color:#991b1b;">🔴 Revelar Rojos</button>
+
+                <!-- Botones de sistema alineados a la derecha -->
+                <div style="margin-left: auto; display: flex; gap: 8px;">
+                    <button class="tool-btn" id="advance-bots-btn"
+                        style="display:none; background:#16a34a; border-color:#22c55e;" onclick="executeBotRounds()">▶️
+                        Siguiente Ronda IA</button>
+                    <button class="tool-btn" style="background:#dc2626; border-color:#ef4444;" onclick="initGame()">🔄
+                        Reiniciar</button>
+                    <button class="tool-btn" style="background:#475569; border-color:#64748b;"
+                        onclick="returnToMenu()">🏠 Menú</button>
+                </div>
+            </div>
+
+            <!-- Barra 2: Herramientas del Equipo -->
+            <div class="tools-bar" style="margin-bottom: 0;">
+                <span class="tools-label">Equipo Desbloqueable:</span>
+                <button class="tool-btn" id="pliers-btn" disabled onclick="usePliers()">🔧 Alicates (2/4 del 5)</button>
+                <button class="tool-btn" id="scanner-btn" disabled onclick="useScanner()">📡 Escáner (2/4 del
+                    8)</button>
+            </div>
+
         </div>
 
         <div class="board" id="board-container"></div>
