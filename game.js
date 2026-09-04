@@ -441,265 +441,7 @@ function usePliers() {
     // Nota: Los alicates se activan antes de un corte y protegen ese intento, no pasan el turno por sí solos.
 }
 
-function executeBotRounds() {
-    for (let bot = 1; bot <= 3; bot++) {
-        if (!state.active || state.lives <= 0) break;
-        const botHand = state.matrix[bot].filter(c => !c.cut);
-        if (botHand.length === 0) continue;
-
-        let executed = false;
-
-        // PRIORIDAD 0: Autocortes de pares o cuartetos
-        const countByValue = {};
-        botHand.forEach(c => countByValue[c.value] = (countByValue[c.value] || 0) + 1);
-
-        for (const valStr in countByValue) {
-            const val = parseFloat(valStr);
-            const count = countByValue[val];
-            const inv = state.inventory[val];
-
-            if (count === 4 || (count === 2 && inv.total === 4 && inv.cut === 2) || (count === 2 && inv.total === 2 && inv.cut === 0)) {
-                const cardsToCut = botHand.filter(c => c.value === val);
-                const positions = cardsToCut.map(c => c.pos).join(" y ");
-
-                log(`✂️ ¡AUTOCORTE! ${PLAYERS[bot]} descarta automáticamente sus cables de valor ${val} (posiciones ${positions}).`, "#10b981");
-
-                cardsToCut.forEach(c => { c.cut = true; c.revealed = true; });
-                inv.cut += cardsToCut.length;
-                executed = true;
-                break;
-            }
-        }
-
-        if (executed) { checkGameState(); renderTracker(); renderBoard(); updateToolsState(); continue; }
-
-        const reversedHand = [...botHand].reverse();
-
-        // PRIORIDAD 1: Pistas Públicas Seguras
-        for (let myCard of reversedHand) {
-            for (let otherP = 0; otherP < 4; otherP++) {
-                if (otherP === bot) continue;
-                const match = state.matrix[otherP].find(c => !c.cut && (c.clue || (otherP !== 0 && c.revealed)) && c.value === myCard.value);
-                if (match) {
-                    log(`${PLAYERS[bot]} ve la pista de ${PLAYERS[otherP]} (${match.pos}: ${match.value}) y corta con su ${myCard.pos}.`, "#0284c7");
-                    match.cut = true; match.revealed = true;
-                    myCard.cut = true; myCard.revealed = true;
-                    state.inventory[myCard.value].cut += 2;
-                    executed = true;
-                    break;
-                }
-            }
-            if (executed) break;
-        }
-
-        // PRIORIDAD 2: Herramientas (Detector Doble con Prudencia Táctica)
-        if (!executed) {
-            if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut === 4) {
-                const targetP = (bot + 1) % 4;
-                const queryVal = botHand[0].value;
-                const count = state.matrix[targetP].filter(c => c.value === queryVal && !c.cut).length;
-                state.scannerUsed = true;
-                log(`📡 ${PLAYERS[bot]} activa el Escáner con ${PLAYERS[targetP]}: confirma que tiene ${count} copia(s) del número ${queryVal}.`, "#38bdf8");
-                updateToolsState();
-                executed = true;
-            }
-            else if (state.dualCharges > 0) {
-                let toolUsed = false;
-                for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
-                    const targetP = (bot + targetOffset) % 4;
-                    const targetRack = state.matrix[targetP];
-
-                    for (let i = 0; i < targetRack.length - 1; i++) {
-                        const c1 = targetRack[i];
-                        const c2 = targetRack[i + 1];
-
-                        if (!c1.cut && !c1.revealed && !c2.cut && !c2.revealed) {
-                            let minB = 1;
-                            for (let j = i - 1; j >= 0; j--) { if (targetRack[j].revealed || targetRack[j].cut) { minB = targetRack[j].value; break; } }
-                            let maxB = 12;
-                            for (let j = i + 2; j < targetRack.length; j++) { if (targetRack[j].revealed || targetRack[j].cut) { maxB = targetRack[j].value; break; } }
-
-                            if (maxB - minB <= 3) {
-                                const candidate = reversedHand.find(c => c.value > minB && c.value < maxB);
-                                if (candidate) {
-                                    const val = candidate.value;
-                                    const copiesInHand = botHand.filter(h => h.value === val).length;
-                                    const remaining = state.inventory[val].total - state.inventory[val].cut - copiesInHand;
-
-                                    if (remaining > 0) {
-                                        state.dualCharges--;
-                                        log(`🔍 ${PLAYERS[bot]} usa Detector Doble sobre ${PLAYERS[targetP]}: ¿El número ${val} está en ${c1.pos} o ${c2.pos}?`, "#38bdf8");
-
-                                        if (c1.value === val || c2.value === val) {
-                                            const hitCard = (c1.value === val) ? c1 : c2;
-                                            log(`✅ ¡ÉXITO! ${PLAYERS[targetP]} confirma y corta la casilla ${hitCard.pos}.`, "#10b981");
-                                            hitCard.cut = true; hitCard.revealed = true; candidate.cut = true;
-                                            state.inventory[val].cut += 2;
-                                        } else {
-                                            state.lives--;
-                                            log(`❌ NEGATIVO. Pierden 1 vida, pero se revela información vital...`, "#ef4444");
-                                            let cardToReveal = c1;
-                                            if (c1.isYellow && !c2.isYellow) cardToReveal = c2;
-                                            else if (c2.isYellow && !c1.isYellow) cardToReveal = c1;
-                                            cardToReveal.revealed = true; cardToReveal.clue = true;
-                                            log(`💡 ${PLAYERS[targetP]} revela la casilla ${cardToReveal.pos}: es un ${cardToReveal.value}${cardToReveal.isYellow ? '🟡' : ''}.`, "#eab308");
-                                        }
-                                        updateToolsState(); toolUsed = true; executed = true; break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (toolUsed) break;
-                }
-            }
-        }
-
-        // PRIORIDAD 3: Probabilidad Pura + Conciencia Espacial Humana
-        if (!executed) {
-            const ALL_VALUES = [1, 2, 3, 4, 4.5, 5, 6, 7, 8, 9, 9.5, 10, 11, 12];
-            let possibleMoves = [];
-
-            for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
-                const targetP = (bot + targetOffset) % 4;
-                const targetRack = state.matrix[targetP];
-                const hiddenCards = targetRack.filter(c => !c.cut && !c.revealed);
-
-                for (let targetCard of hiddenCards) {
-                    const targetIdx = LETTERS.indexOf(targetCard.pos);
-
-                    let minBound = 1;
-                    let hiddenLeft = 0; // Huecos ciegos a la izquierda dentro del bloque
-                    for (let idx = targetIdx - 1; idx >= 0; idx--) {
-                        if (targetRack[idx].revealed || targetRack[idx].cut) { minBound = targetRack[idx].value; break; }
-                        hiddenLeft++;
-                    }
-
-                    let maxBound = 12;
-                    let hiddenRight = 0; // Huecos ciegos a la derecha dentro del bloque
-                    for (let idx = targetIdx + 1; idx < targetRack.length; idx++) {
-                        if (targetRack[idx].revealed || targetRack[idx].cut) { maxBound = targetRack[idx].value; break; }
-                        hiddenRight++;
-                    }
-
-                    let totalRemainingInRange = 0;
-                    for (let v of ALL_VALUES) {
-                        if (v >= minBound && v <= maxBound) {
-                            const copiesInMyHand = botHand.filter(h => h.value === v).length;
-                            const remaining = state.inventory[v].total - state.inventory[v].cut - copiesInMyHand;
-                            if (remaining > 0) totalRemainingInRange += remaining;
-                        }
-                    }
-
-                    if (totalRemainingInRange === 0) continue;
-
-                    const uniqueVals = [...new Set(botHand.map(c => c.value))];
-                    for (let val of uniqueVals) {
-                        if (val < minBound || val > maxBound) continue;
-
-                        // 1. FILTRO FÍSICO ESTRICTO: ¿Hay suficientes cartas en el juego para rellenar los huecos?
-                        let availableGreaterOrEqual = 0;
-                        for (let v of ALL_VALUES) {
-                            if (v >= val) {
-                                const copies = botHand.filter(h => h.value === v).length;
-                                availableGreaterOrEqual += Math.max(0, state.inventory[v].total - state.inventory[v].cut - copies);
-                            }
-                        }
-                        if (availableGreaterOrEqual <= hiddenRight) continue; // Físicamente imposible
-
-                        let availableLessOrEqual = 0;
-                        for (let v of ALL_VALUES) {
-                            if (v <= val) {
-                                const copies = botHand.filter(h => h.value === v).length;
-                                availableLessOrEqual += Math.max(0, state.inventory[v].total - state.inventory[v].cut - copies);
-                            }
-                        }
-                        if (availableLessOrEqual <= hiddenLeft) continue; // Físicamente imposible
-
-                        const copiesInMyHand = botHand.filter(h => h.value === val).length;
-                        const remainingInOtherRacks = state.inventory[val].total - state.inventory[val].cut - copiesInMyHand;
-
-                        if (remainingInOtherRacks > 0) {
-                            const hitChance = remainingInOtherRacks / totalRemainingInRange;
-
-                            // 2. PUNTAJE DE ALINEACIÓN: Evalúa qué tan lógica es la posición espacial
-                            const totalHidden = hiddenLeft + hiddenRight;
-                            const relativePos = totalHidden === 0 ? 0.5 : hiddenLeft / totalHidden;
-                            const relativeVal = maxBound === minBound ? 0.5 : (val - minBound) / (maxBound - minBound);
-                            const alignmentScore = Math.abs(relativeVal - relativePos); // Cero es perfecto
-
-                            possibleMoves.push({
-                                targetP, targetCard, guessValue: val, hitChance,
-                                rangeWidth: maxBound - minBound, alignmentScore
-                            });
-                        }
-                    }
-                }
-            }
-
-            if (possibleMoves.length > 0) {
-                // ORDEN DE INTELIGENCIA:
-                possibleMoves.sort((a, b) => {
-                    if (b.hitChance !== a.hitChance) return b.hitChance - a.hitChance; // 1. Mayor % de acierto
-                    if (a.alignmentScore !== b.alignmentScore) return a.alignmentScore - b.alignmentScore; // 2. Mejor lógica espacial (más cerca de 0)
-                    return a.rangeWidth - b.rangeWidth; // 3. Rango más acotado
-                });
-
-                const bestMove = possibleMoves[0];
-                const validCandidateCard = reversedHand.find(c => c.value === bestMove.guessValue);
-
-                if (bestMove.hitChance < 1 && !state.pliersUsed && state.inventory[5] && state.inventory[5].cut === 4) {
-                    state.pliersActive = true; state.pliersUsed = true;
-                    log(`🔧 ${PLAYERS[bot]} activa los Alicates de Precisión ante un corte de riesgo.`, "#38bdf8");
-                    updateToolsState();
-                }
-
-                if (bestMove.targetCard.value === bestMove.guessValue) {
-                    const probabilityStr = (bestMove.hitChance * 100).toFixed(0);
-                    log(`${PLAYERS[bot]} calculó un ${probabilityStr}% de éxito y corta el ${bestMove.guessValue} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}).`, "#10b981");
-                    bestMove.targetCard.cut = true; bestMove.targetCard.revealed = true;
-                    validCandidateCard.cut = true;
-                    state.inventory[bestMove.guessValue].cut += 2;
-                } else {
-                    if (state.pliersActive) {
-                        log(`¡Fallo protegido por Alicates! ${PLAYERS[bot]} probó el ${bestMove.guessValue} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}) y era un ${bestMove.targetCard.value}. No pierden vidas.`, "#38bdf8");
-                        state.pliersActive = false;
-                    } else {
-                        state.lives--;
-                        const probabilityStr = (bestMove.hitChance * 100).toFixed(0);
-                        log(`${PLAYERS[bot]} arriesgó con un ${probabilityStr}% de acierto. Probó el ${bestMove.guessValue} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}) y falló. Era un ${bestMove.targetCard.value}.`, "#ef4444");
-                    }
-                    bestMove.targetCard.revealed = true;
-                }
-                executed = true;
-            } else {
-                const fallbackCandidate = reversedHand[0];
-                const fallbackTargetP = (bot + 1) % 4;
-                const fallbackCard = state.matrix[fallbackTargetP].find(c => !c.cut && !c.revealed) || state.matrix[fallbackTargetP].find(c => !c.cut);
-
-                if (fallbackCard) {
-                    if (fallbackCard.value === fallbackCandidate.value) {
-                        fallbackCard.cut = true; fallbackCard.revealed = true; fallbackCandidate.cut = true;
-                        state.inventory[fallbackCandidate.value].cut += 2;
-                    } else {
-                        state.lives--; fallbackCard.revealed = true;
-                    }
-                }
-            }
-        }
-
-        checkGameState(); renderTracker(); renderBoard(); updateToolsState();
-    }
-
-    const myActiveCards = state.matrix[0].filter(c => !c.cut).length;
-    if (myActiveCards === 0 && state.active && state.lives > 0) {
-        const remainingGlobal = Object.values(state.inventory).reduce((acc, curr) => acc + (curr.total - curr.cut), 0);
-        if (remainingGlobal > 0) {
-            log("Atril del jugador completado. Los compañeros resuelven la mesa automáticamente...", "#facc15");
-            setTimeout(executeBotRounds, 1200);
-        }
-    }
-}
+//Viejo executebotsrounds()
 
 function checkGameState() {
     if (state.lives <= 0) {
@@ -783,13 +525,276 @@ function clearMatchHistory() {
     }
 }
 
-// --- MÓDULO DE SIMULACIÓN MASIVA (TESTING FULL IA) ---
+// --- CEREBRO ÚNICO TÁCTICO PARA CUALQUIER JUGADOR (BOT O SIMULACIÓN) ---
+function executeSingleTurn(bot) {
+    if (!state.active || state.lives <= 0) return false;
+    const botHand = state.matrix[bot].filter(c => !c.cut);
+    if (botHand.length === 0) return false;
+
+    let executed = false;
+
+    // PRIORIDAD 0: Autocortes de pares o cuartetos
+    const countByValue = {};
+    botHand.forEach(c => countByValue[c.value] = (countByValue[c.value] || 0) + 1);
+
+    for (const valStr in countByValue) {
+        const val = parseFloat(valStr);
+        const count = countByValue[val];
+        const inv = state.inventory[val];
+
+        if (count === 4 || (count === 2 && inv.total === 4 && inv.cut === 2) || (count === 2 && inv.total === 2 && inv.cut === 0)) {
+            const cardsToCut = botHand.filter(c => c.value === val);
+            const positions = cardsToCut.map(c => c.pos).join(" y ");
+
+            log(`✂️ ¡AUTOCORTE! ${PLAYERS[bot]} descarta automáticamente sus cables de valor ${val} (posiciones ${positions}).`, "#10b981");
+
+            cardsToCut.forEach(c => { c.cut = true; c.revealed = true; });
+            inv.cut += cardsToCut.length;
+            return true;
+        }
+    }
+
+    const reversedHand = [...botHand].reverse();
+
+    // PRIORIDAD 1: Pistas Públicas Seguras
+    for (let myCard of reversedHand) {
+        for (let otherP = 0; otherP < 4; otherP++) {
+            if (otherP === bot) continue;
+            const match = state.matrix[otherP].find(c => !c.cut && (c.clue || (otherP !== 0 && c.revealed)) && c.value === myCard.value);
+            if (match) {
+                log(`${PLAYERS[bot]} ve la pista de ${PLAYERS[otherP]} (${match.pos}: ${match.value}) y corta con su ${myCard.pos}.`, "#0284c7");
+                match.cut = true; match.revealed = true;
+                myCard.cut = true; myCard.revealed = true;
+                state.inventory[myCard.value].cut += 2;
+                return true;
+            }
+        }
+    }
+
+    // PRIORIDAD 2: Herramientas (Detector Doble Oficial)
+    if (!executed) {
+        if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut === 4) {
+            const targetP = (bot + 1) % 4;
+            const queryVal = botHand[0].value;
+            const count = state.matrix[targetP].filter(c => c.value === queryVal && !c.cut).length;
+            state.scannerUsed = true;
+            log(`📡 ${PLAYERS[bot]} activa el Escáner con ${PLAYERS[targetP]}: confirma que tiene ${count} copia(s) del número ${queryVal}.`, "#38bdf8");
+            updateToolsState();
+            return true;
+        }
+        else if (state.dualCharges > 0) {
+            let toolUsed = false;
+            for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
+                const targetP = (bot + targetOffset) % 4;
+                const targetRack = state.matrix[targetP];
+
+                for (let i = 0; i < targetRack.length - 1; i++) {
+                    const c1 = targetRack[i];
+                    const c2 = targetRack[i + 1];
+
+                    if (!c1.cut && !c1.revealed && !c2.cut && !c2.revealed) {
+                        let minB = 1;
+                        for (let j = i - 1; j >= 0; j--) { if (targetRack[j].revealed || targetRack[j].cut) { minB = targetRack[j].value; break; } }
+                        let maxB = 12;
+                        for (let j = i + 2; j < targetRack.length; j++) { if (targetRack[j].revealed || targetRack[j].cut) { maxB = targetRack[j].value; break; } }
+
+                        if (maxB - minB <= 3) {
+                            const candidate = reversedHand.find(c => c.value > minB && c.value < maxB);
+                            if (candidate) {
+                                const val = candidate.value;
+                                const copiesInHand = botHand.filter(h => h.value === val).length;
+                                const remaining = state.inventory[val].total - state.inventory[val].cut - copiesInHand;
+
+                                if (remaining > 0) {
+                                    state.dualCharges--;
+                                    log(`🔍 ${PLAYERS[bot]} usa Detector Doble sobre ${PLAYERS[targetP]}: ¿El número ${val} está en ${c1.pos} o ${c2.pos}?`, "#38bdf8");
+
+                                    if (c1.value === val || c2.value === val) {
+                                        const hitCard = (c1.value === val) ? c1 : c2;
+                                        log(`✅ ¡ÉXITO! ${PLAYERS[targetP]} confirma y corta la casilla ${hitCard.pos}.`, "#10b981");
+                                        hitCard.cut = true; hitCard.revealed = true; candidate.cut = true;
+                                        state.inventory[val].cut += 2;
+                                    } else {
+                                        state.lives--;
+                                        log(`❌ NEGATIVO. Pierden 1 vida, pero se revela información vital...`, "#ef4444");
+                                        let cardToReveal = c1;
+                                        if (c1.isYellow && !c2.isYellow) cardToReveal = c2;
+                                        else if (c2.isYellow && !c1.isYellow) cardToReveal = c1;
+                                        cardToReveal.revealed = true; cardToReveal.clue = true;
+                                        log(`💡 ${PLAYERS[targetP]} revela la casilla ${cardToReveal.pos}: es un ${cardToReveal.value}${cardToReveal.isYellow ? '🟡' : ''}.`, "#eab308");
+                                    }
+                                    updateToolsState(); toolUsed = true; executed = true; break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (toolUsed) return true;
+            }
+        }
+    }
+
+    // PRIORIDAD 3: Probabilidad Pura + Conciencia Espacial Humana
+    if (!executed) {
+        const ALL_VALUES = [1, 2, 3, 4, 4.5, 5, 6, 7, 8, 9, 9.5, 10, 11, 12];
+        let possibleMoves = [];
+
+        for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
+            const targetP = (bot + targetOffset) % 4;
+            const targetRack = state.matrix[targetP];
+            const hiddenCards = targetRack.filter(c => !c.cut && !c.revealed);
+
+            for (let targetCard of hiddenCards) {
+                const targetIdx = LETTERS.indexOf(targetCard.pos);
+
+                let minBound = 1;
+                let hiddenLeft = 0;
+                for (let idx = targetIdx - 1; idx >= 0; idx--) {
+                    if (targetRack[idx].revealed || targetRack[idx].cut) { minBound = targetRack[idx].value; break; }
+                    hiddenLeft++;
+                }
+
+                let maxBound = 12;
+                let hiddenRight = 0;
+                for (let idx = targetIdx + 1; idx < targetRack.length; idx++) {
+                    if (targetRack[idx].revealed || targetRack[idx].cut) { maxBound = targetRack[idx].value; break; }
+                    hiddenRight++;
+                }
+
+                let totalRemainingInRange = 0;
+                for (let v of ALL_VALUES) {
+                    if (v >= minBound && v <= maxBound) {
+                        const copiesInMyHand = botHand.filter(h => h.value === v).length;
+                        const remaining = state.inventory[v].total - state.inventory[v].cut - copiesInMyHand;
+                        if (remaining > 0) totalRemainingInRange += remaining;
+                    }
+                }
+
+                if (totalRemainingInRange === 0) continue;
+
+                const uniqueVals = [...new Set(botHand.map(c => c.value))];
+                for (let val of uniqueVals) {
+                    if (val < minBound || val > maxBound) continue;
+
+                    let availableGreaterOrEqual = 0;
+                    for (let v of ALL_VALUES) {
+                        if (v >= val) {
+                            const copies = botHand.filter(h => h.value === v).length;
+                            availableGreaterOrEqual += Math.max(0, state.inventory[v].total - state.inventory[v].cut - copies);
+                        }
+                    }
+                    if (availableGreaterOrEqual <= hiddenRight) continue;
+
+                    let availableLessOrEqual = 0;
+                    for (let v of ALL_VALUES) {
+                        if (v <= val) {
+                            const copies = botHand.filter(h => h.value === v).length;
+                            availableLessOrEqual += Math.max(0, state.inventory[v].total - state.inventory[v].cut - copies);
+                        }
+                    }
+                    if (availableLessOrEqual <= hiddenLeft) continue;
+
+                    const copiesInMyHand = botHand.filter(h => h.value === val).length;
+                    const remainingInOtherRacks = state.inventory[val].total - state.inventory[val].cut - copiesInMyHand;
+
+                    if (remainingInOtherRacks > 0) {
+                        const hitChance = remainingInOtherRacks / totalRemainingInRange;
+
+                        const totalHidden = hiddenLeft + hiddenRight;
+                        const relativePos = totalHidden === 0 ? 0.5 : hiddenLeft / totalHidden;
+                        const relativeVal = maxBound === minBound ? 0.5 : (val - minBound) / (maxBound - minBound);
+                        const alignmentScore = Math.abs(relativeVal - relativePos);
+
+                        possibleMoves.push({
+                            targetP, targetCard, guessValue: val, hitChance,
+                            rangeWidth: maxBound - minBound, alignmentScore
+                        });
+                    }
+                }
+            }
+        }
+
+        if (possibleMoves.length > 0) {
+            possibleMoves.sort((a, b) => {
+                if (b.hitChance !== a.hitChance) return b.hitChance - a.hitChance;
+                if (a.alignmentScore !== b.alignmentScore) return a.alignmentScore - b.alignmentScore;
+                return a.rangeWidth - b.rangeWidth;
+            });
+
+            const bestMove = possibleMoves[0];
+            const validCandidateCard = reversedHand.find(c => c.value === bestMove.guessValue);
+
+            if (bestMove.hitChance < 1 && !state.pliersUsed && state.inventory[5] && state.inventory[5].cut === 4) {
+                state.pliersActive = true; state.pliersUsed = true;
+                log(`🔧 ${PLAYERS[bot]} activa los Alicates de Precisión ante un corte de riesgo.`, "#38bdf8");
+                updateToolsState();
+            }
+
+            if (bestMove.targetCard.value === bestMove.guessValue) {
+                const probabilityStr = (bestMove.hitChance * 100).toFixed(0);
+                log(`${PLAYERS[bot]} calculó un ${probabilityStr}% de éxito y corta el ${bestMove.guessValue} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}).`, "#10b981");
+                bestMove.targetCard.cut = true; bestMove.targetCard.revealed = true;
+                validCandidateCard.cut = true;
+                state.inventory[bestMove.guessValue].cut += 2;
+            } else {
+                if (state.pliersActive) {
+                    log(`¡Fallo protegido por Alicates! ${PLAYERS[bot]} probó el ${bestMove.guessValue} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}) y era un ${bestMove.targetCard.value}. No pierden vidas.`, "#38bdf8");
+                    state.pliersActive = false;
+                } else {
+                    state.lives--;
+                    const probabilityStr = (bestMove.hitChance * 100).toFixed(0);
+                    log(`${PLAYERS[bot]} arriesgó con un ${probabilityStr}% de acierto. Probó el ${bestMove.guessValue} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}) y falló. Era un ${bestMove.targetCard.value}.`, "#ef4444");
+                }
+                bestMove.targetCard.revealed = true;
+            }
+            executed = true;
+        } else {
+            const fallbackCandidate = reversedHand[0];
+            const fallbackTargetP = (bot + 1) % 4;
+            const fallbackCard = state.matrix[fallbackTargetP].find(c => !c.cut && !c.revealed) || state.matrix[fallbackTargetP].find(c => !c.cut);
+
+            if (fallbackCard) {
+                if (fallbackCard.value === fallbackCandidate.value) {
+                    log(`${PLAYERS[bot]} arriesga a ciegas y corta con éxito el ${fallbackCandidate.value} en ${PLAYERS[fallbackTargetP]} (${fallbackCard.pos}).`, "#10b981");
+                    fallbackCard.cut = true; fallbackCard.revealed = true; fallbackCandidate.cut = true;
+                    state.inventory[fallbackCandidate.value].cut += 2;
+                } else {
+                    state.lives--; fallbackCard.revealed = true;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
+// --- BUCLE NORMAL DE PARTIDA ---
+function executeBotRounds() {
+    for (let bot = 1; bot <= 3; bot++) {
+        if (!state.active || state.lives <= 0) break;
+        executeSingleTurn(bot);
+        checkGameState();
+        renderTracker();
+        renderBoard();
+        updateToolsState();
+    }
+
+    const myActiveCards = state.matrix[0].filter(c => !c.cut).length;
+    if (myActiveCards === 0 && state.active && state.lives > 0) {
+        const remainingGlobal = Object.values(state.inventory).reduce((acc, curr) => acc + (curr.total - curr.cut), 0);
+        if (remainingGlobal > 0) {
+            log("Atril del jugador completado. Los compañeros resuelven la mesa automáticamente...", "#facc15");
+            setTimeout(executeBotRounds, 1200);
+        }
+    }
+}
+
+// --- MÓDULO DE SIMULACIÓN MASIVA (100% SINCRONIZADO) ---
 function runSimulations(iterations = 100) {
-    console.log(`🚀 Iniciando simulación de ${iterations} partidas CON HERRAMIENTAS ACTIVADAS...`);
+    console.log(`🚀 Iniciando simulación de ${iterations} partidas con Cerebro Unificado...`);
     let wins = 0;
     let losses = 0;
 
-    // Silenciar UI y el historial temporalmente para no congelar el navegador ni ensuciar el clipboard
     const originalLog = log;
     log = function () { };
     const originalRenderBoard = renderBoard;
@@ -804,6 +809,7 @@ function runSimulations(iterations = 100) {
     for (let i = 0; i < iterations; i++) {
         initGame();
 
+        // Fijar pista automática para el Jugador 1
         const p1Hand = state.matrix[0].filter(c => !c.isYellow);
         const randomClue = p1Hand[Math.floor(Math.random() * p1Hand.length)];
         randomClue.clue = true;
@@ -811,188 +817,11 @@ function runSimulations(iterations = 100) {
         state.initialClueSelected = true;
 
         let safetyCounter = 0;
-
         while (state.active && safetyCounter < 500) {
             safetyCounter++;
-
             for (let bot = 0; bot <= 3; bot++) {
                 if (!state.active || state.lives <= 0) break;
-                const botHand = state.matrix[bot].filter(c => !c.cut);
-                if (botHand.length === 0) continue;
-
-                let executed = false;
-                const reversedHand = [...botHand].reverse();
-
-                // PRIORIDAD 0: Autocortes
-                const countByValue = {};
-                botHand.forEach(c => countByValue[c.value] = (countByValue[c.value] || 0) + 1);
-                for (const valStr in countByValue) {
-                    const val = parseFloat(valStr);
-                    const count = countByValue[val];
-                    const inv = state.inventory[val];
-                    if (count === 4 || (count === 2 && inv.total === 4 && inv.cut === 2) || (count === 2 && inv.total === 2 && inv.cut === 0)) {
-                        const cardsToCut = botHand.filter(c => c.value === val);
-                        cardsToCut.forEach(c => { c.cut = true; c.revealed = true; });
-                        inv.cut += cardsToCut.length;
-                        executed = true;
-                        break;
-                    }
-                }
-                if (executed) { checkGameState(); continue; }
-
-                // PRIORIDAD 1: Pistas Públicas
-                for (let myCard of reversedHand) {
-                    for (let otherP = 0; otherP < 4; otherP++) {
-                        if (otherP === bot) continue;
-                        const match = state.matrix[otherP].find(c => !c.cut && (c.clue || (otherP !== 0 && c.revealed)) && c.value === myCard.value);
-                        if (match) {
-                            match.cut = true; match.revealed = true;
-                            myCard.cut = true; myCard.revealed = true;
-                            state.inventory[myCard.value].cut += 2;
-                            executed = true;
-                            break;
-                        }
-                    }
-                    if (executed) break;
-                }
-                if (executed) { checkGameState(); continue; }
-
-                // PRIORIDAD 2: Herramientas 
-                if (!executed) {
-                    if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut === 4) {
-                        const targetP = (bot + 1) % 4;
-                        state.scannerUsed = true;
-                        executed = true;
-                    }
-                    else if (state.dualCharges > 0) {
-                        for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
-                            const targetP = (bot + targetOffset) % 4;
-                            const targetRack = state.matrix[targetP];
-                            const hiddenCards = targetRack.filter(c => !c.cut && !c.revealed);
-
-                            for (let targetCard of hiddenCards) {
-                                const targetIdx = LETTERS.indexOf(targetCard.pos);
-                                let minBound = 1;
-                                for (let idx = targetIdx - 1; idx >= 0; idx--) { if (targetRack[idx].revealed || targetRack[idx].cut) { minBound = targetRack[idx].value; break; } }
-                                let maxBound = 12;
-                                for (let idx = targetIdx + 1; idx < targetRack.length; idx++) { if (targetRack[idx].revealed || targetRack[idx].cut) { maxBound = targetRack[idx].value; break; } }
-
-                                if (maxBound - minBound <= 1.5 && minBound !== maxBound) {
-                                    state.dualCharges--;
-                                    const opt1 = minBound;
-                                    const opt2 = maxBound;
-
-                                    if (targetCard.value === opt1 || targetCard.value === opt2) {
-                                        targetCard.clue = true; targetCard.revealed = true;
-                                        const botMatch = reversedHand.find(c => c.value === targetCard.value);
-                                        if (botMatch) {
-                                            targetCard.cut = true; botMatch.cut = true;
-                                            state.inventory[targetCard.value].cut += 2;
-                                        }
-                                    } else {
-                                        if (opt2 - opt1 === 1) {
-                                            const deducedYellow = opt1 + 0.5;
-                                            targetCard.clue = true; targetCard.revealed = true;
-                                            const botMatch = reversedHand.find(c => c.value === deducedYellow);
-                                            if (botMatch) {
-                                                targetCard.cut = true; botMatch.cut = true;
-                                                state.inventory[deducedYellow].cut += 2;
-                                            }
-                                        }
-                                    }
-                                    executed = true;
-                                    break;
-                                }
-                            }
-                            if (executed) break;
-                        }
-                    }
-                }
-                if (executed) { checkGameState(); continue; }
-
-                // PRIORIDAD 3: Cálculo de probabilidad (hitChance) + Alicates
-                if (!executed) {
-                    const ALL_VALUES = [1, 2, 3, 4, 4.5, 5, 6, 7, 8, 9, 9.5, 10, 11, 12];
-                    let possibleMoves = [];
-
-                    for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
-                        const targetP = (bot + targetOffset) % 4;
-                        const targetRack = state.matrix[targetP];
-                        const hiddenCards = targetRack.filter(c => !c.cut && !c.revealed);
-
-                        for (let targetCard of hiddenCards) {
-                            const targetIdx = LETTERS.indexOf(targetCard.pos);
-                            let minBound = 1;
-                            for (let idx = targetIdx - 1; idx >= 0; idx--) { if (targetRack[idx].revealed || targetRack[idx].cut) { minBound = targetRack[idx].value; break; } }
-                            let maxBound = 12;
-                            for (let idx = targetIdx + 1; idx < targetRack.length; idx++) { if (targetRack[idx].revealed || targetRack[idx].cut) { maxBound = targetRack[idx].value; break; } }
-
-                            let totalRemainingInRange = 0;
-                            for (let v of ALL_VALUES) {
-                                if (v >= minBound && v <= maxBound) {
-                                    const copiesInMyHand = botHand.filter(h => h.value === v).length;
-                                    const remaining = state.inventory[v].total - state.inventory[v].cut - copiesInMyHand;
-                                    if (remaining > 0) totalRemainingInRange += remaining;
-                                }
-                            }
-
-                            if (totalRemainingInRange === 0) continue;
-
-                            const uniqueVals = [...new Set(botHand.map(c => c.value))];
-                            for (let val of uniqueVals) {
-                                if (val < minBound || val > maxBound) continue;
-                                const copiesInMyHand = botHand.filter(h => h.value === val).length;
-                                const remainingInOtherRacks = state.inventory[val].total - state.inventory[val].cut - copiesInMyHand;
-
-                                if (remainingInOtherRacks > 0) {
-                                    const hitChance = remainingInOtherRacks / totalRemainingInRange;
-                                    possibleMoves.push({ targetP, targetCard, guessValue: val, hitChance, rangeWidth: maxBound - minBound });
-                                }
-                            }
-                        }
-                    }
-
-                    if (possibleMoves.length > 0) {
-                        possibleMoves.sort((a, b) => {
-                            if (b.hitChance !== a.hitChance) return b.hitChance - a.hitChance;
-                            return a.rangeWidth - b.rangeWidth;
-                        });
-                        const bestMove = possibleMoves[0];
-                        const validCandidateCard = reversedHand.find(c => c.value === bestMove.guessValue);
-
-                        // Uso de Alicates de Precisión
-                        if (bestMove.hitChance < 1 && !state.pliersUsed && state.inventory[5] && state.inventory[5].cut === 4) {
-                            state.pliersActive = true;
-                            state.pliersUsed = true;
-                        }
-
-                        if (bestMove.targetCard.value === bestMove.guessValue) {
-                            bestMove.targetCard.cut = true; bestMove.targetCard.revealed = true;
-                            validCandidateCard.cut = true;
-                            state.inventory[bestMove.guessValue].cut += 2;
-                        } else {
-                            if (state.pliersActive) {
-                                state.pliersActive = false;
-                            } else {
-                                state.lives--;
-                            }
-                            bestMove.targetCard.revealed = true;
-                        }
-                    } else {
-                        const fallbackCandidate = reversedHand[0];
-                        const fallbackTargetP = (bot + 1) % 4;
-                        const fallbackCard = state.matrix[fallbackTargetP].find(c => !c.cut && !c.revealed) || state.matrix[fallbackTargetP].find(c => !c.cut);
-
-                        if (fallbackCard) {
-                            if (fallbackCard.value === fallbackCandidate.value) {
-                                fallbackCard.cut = true; fallbackCard.revealed = true; fallbackCandidate.cut = true;
-                                state.inventory[fallbackCandidate.value].cut += 2;
-                            } else {
-                                state.lives--; fallbackCard.revealed = true;
-                            }
-                        }
-                    }
-                }
+                executeSingleTurn(bot);
                 checkGameState();
             }
         }
@@ -1001,7 +830,6 @@ function runSimulations(iterations = 100) {
         else losses++;
     }
 
-    // Restaurar funciones originales
     log = originalLog;
     renderBoard = originalRenderBoard;
     renderTracker = originalRenderTracker;
@@ -1009,9 +837,9 @@ function runSimulations(iterations = 100) {
     saveFinishedGame = originalSaveFinishedGame;
 
     const winRate = ((wins / iterations) * 100).toFixed(1);
-    console.log(`📊 RESULTADOS DE ${iterations} PARTIDAS (CON HERRAMIENTAS):`);
+    console.log(`📊 RESULTADOS DE ${iterations} PARTIDAS:`);
     console.log(`✅ Victorias: ${wins}`);
     console.log(`❌ Derrotas: ${losses}`);
     console.log(`🏆 Win Rate: ${winRate}%`);
-    alert(`Simulación completada. Win Rate de la IA: ${winRate}%. Revisa la consola (F12).`);
+    alert(`Simulación completada. Win Rate: ${winRate}%. Revisa la consola (F12).`);
 }
