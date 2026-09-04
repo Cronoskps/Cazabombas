@@ -349,3 +349,46 @@ header {
     font-size: 0.75rem;
     padding: 4px 10px;
 }
+
+/* Estilos del Menú Principal */
+.menu-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 15px;
+}
+
+.menu-btn {
+    padding: 20px 40px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 12px;
+    border: none;
+    color: white;
+    width: 400px;
+    transition: transform 0.2s, filter 0.2s;
+    text-align: left;
+}
+
+.menu-btn.basic {
+    background: linear-gradient(135deg, #047857, #15803d);
+    border-bottom: 4px solid #065f46;
+}
+
+.menu-btn.advanced {
+    background: linear-gradient(135deg, #b91c1c, #dc2626);
+    border-bottom: 4px solid #991b1b;
+}
+
+.menu-btn:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.1);
+}
+
+.menu-btn:active {
+    transform: translateY(2px);
+    border-bottom: 0;
+}
