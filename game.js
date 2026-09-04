@@ -492,7 +492,7 @@ function executeBotRounds() {
             if (executed) break;
         }
 
-        // PRIORIDAD 2: Herramientas (NUEVAS REGLAS OFICIALES DETECTOR DOBLE)
+        // PRIORIDAD 2: Herramientas (Detector Doble con Prudencia Táctica)
         if (!executed) {
             if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut === 4) {
                 const targetP = (bot + 1) % 4;
@@ -505,58 +505,60 @@ function executeBotRounds() {
             }
             else if (state.dualCharges > 0) {
                 let toolUsed = false;
-                const uniqueVals = [...new Set(reversedHand.map(c => c.value))];
+                for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
+                    const targetP = (bot + targetOffset) % 4;
+                    const targetRack = state.matrix[targetP];
 
-                for (let val of uniqueVals) {
-                    for (let targetOffset = 1; targetOffset < 4; targetOffset++) {
-                        const targetP = (bot + targetOffset) % 4;
-                        const targetRack = state.matrix[targetP];
-                        const hiddenCards = targetRack.filter(c => !c.cut && !c.revealed);
+                    // Buscar dos cartas ocultas que estén físicamente JUNTAS
+                    for (let i = 0; i < targetRack.length - 1; i++) {
+                        const c1 = targetRack[i];
+                        const c2 = targetRack[i + 1];
 
-                        // Buscar todas las casillas donde este valor podría encajar matemáticamente
-                        const validSlots = [];
-                        for (let tc of hiddenCards) {
-                            const tIdx = LETTERS.indexOf(tc.pos);
-                            let minB = 1, maxB = 12;
-                            for (let i = tIdx - 1; i >= 0; i--) { if (targetRack[i].revealed || targetRack[i].cut) { minB = targetRack[i].value; break; } }
-                            for (let i = tIdx + 1; i < targetRack.length; i++) { if (targetRack[i].revealed || targetRack[i].cut) { maxB = targetRack[i].value; break; } }
-                            if (val >= minB && val <= maxB) validSlots.push(tc);
-                        }
+                        if (!c1.cut && !c1.revealed && !c2.cut && !c2.revealed) {
+                            let minB = 1;
+                            for (let j = i - 1; j >= 0; j--) { if (targetRack[j].revealed || targetRack[j].cut) { minB = targetRack[j].value; break; } }
+                            let maxB = 12;
+                            for (let j = i + 2; j < targetRack.length; j++) { if (targetRack[j].revealed || targetRack[j].cut) { maxB = targetRack[j].value; break; } }
 
-                        // Si hay al menos 2 casillas donde el valor es posible, usamos el Detector
-                        if (validSlots.length >= 2) {
-                            state.dualCharges--;
-                            const c1 = validSlots[0];
-                            const c2 = validSlots[1];
+                            // Criterio de prudencia: Solo usar si el rango visual es menor o igual a 3
+                            if (maxB - minB <= 3) {
+                                const candidate = reversedHand.find(c => c.value > minB && c.value < maxB);
+                                if (candidate) {
+                                    const val = candidate.value;
+                                    const copiesInHand = botHand.filter(h => h.value === val).length;
+                                    const remaining = state.inventory[val].total - state.inventory[val].cut - copiesInHand;
 
-                            log(`🔍 ${PLAYERS[bot]} usa Detector Doble sobre ${PLAYERS[targetP]}: ¿El número ${val} está en ${c1.pos} o ${c2.pos}?`, "#38bdf8");
+                                    if (remaining > 0) {
+                                        state.dualCharges--;
+                                        log(`🔍 ${PLAYERS[bot]} usa Detector Doble sobre ${PLAYERS[targetP]}: ¿El número ${val} está en ${c1.pos} o ${c2.pos}?`, "#38bdf8");
 
-                            if (c1.value === val || c2.value === val) {
-                                const hitCard = (c1.value === val) ? c1 : c2;
-                                log(`✅ ¡ÉXITO! ${PLAYERS[targetP]} confirma y corta la casilla ${hitCard.pos}.`, "#10b981");
-                                hitCard.cut = true;
-                                hitCard.revealed = true;
-                                const botMatch = reversedHand.find(c => c.value === val);
-                                botMatch.cut = true;
-                                state.inventory[val].cut += 2;
-                            } else {
-                                state.lives--;
-                                log(`❌ NEGATIVO. Pierden 1 vida, pero se revela información vital...`, "#ef4444");
+                                        if (c1.value === val || c2.value === val) {
+                                            const hitCard = (c1.value === val) ? c1 : c2;
+                                            log(`✅ ¡ÉXITO! ${PLAYERS[targetP]} confirma y corta la casilla ${hitCard.pos}.`, "#10b981");
+                                            hitCard.cut = true;
+                                            hitCard.revealed = true;
+                                            candidate.cut = true;
+                                            state.inventory[val].cut += 2;
+                                        } else {
+                                            state.lives--;
+                                            log(`❌ NEGATIVO. Pierden 1 vida, pero se revela información vital...`, "#ef4444");
 
-                                // Regla oficial: El compañero revela uno de los cables que NO sea amarillo
-                                let cardToReveal = c1;
-                                if (c1.isYellow && !c2.isYellow) cardToReveal = c2;
-                                else if (c2.isYellow && !c1.isYellow) cardToReveal = c1;
+                                            let cardToReveal = c1;
+                                            if (c1.isYellow && !c2.isYellow) cardToReveal = c2;
+                                            else if (c2.isYellow && !c1.isYellow) cardToReveal = c1;
 
-                                cardToReveal.revealed = true;
-                                cardToReveal.clue = true;
-                                log(`💡 ${PLAYERS[targetP]} revela la casilla ${cardToReveal.pos}: es un ${cardToReveal.value}${cardToReveal.isYellow ? '🟡' : ''}.`, "#eab308");
+                                            cardToReveal.revealed = true;
+                                            cardToReveal.clue = true;
+                                            log(`💡 ${PLAYERS[targetP]} revela la casilla ${cardToReveal.pos}: es un ${cardToReveal.value}${cardToReveal.isYellow ? '🟡' : ''}.`, "#eab308");
+                                        }
+
+                                        updateToolsState();
+                                        toolUsed = true;
+                                        executed = true;
+                                        break;
+                                    }
+                                }
                             }
-
-                            updateToolsState();
-                            toolUsed = true;
-                            executed = true;
-                            break;
                         }
                     }
                     if (toolUsed) break;
