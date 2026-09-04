@@ -154,9 +154,9 @@ function updateToolsState() {
     document.getElementById('dual-detector-btn').disabled = state.dualCharges <= 0 || !state.active || !state.initialClueSelected;
     document.getElementById('self-cut-btn').disabled = !state.active || !state.initialClueSelected || myActiveCards === 0;
 
-    // Habilitar solo si el cuarteto se completó Y no se ha usado todavía
-    document.getElementById('pliers-btn').disabled = (state.inventory[5].cut < 4) || state.pliersUsed || !state.active || !state.initialClueSelected;
-    document.getElementById('scanner-btn').disabled = (state.inventory[8].cut < 4) || state.scannerUsed || !state.active || !state.initialClueSelected;
+    // Habilitar si se cortaron al menos 2 cables Y no se ha usado la herramienta todavía
+    document.getElementById('pliers-btn').disabled = (state.inventory[5].cut < 2) || state.pliersUsed || !state.active || !state.initialClueSelected;
+    document.getElementById('scanner-btn').disabled = (state.inventory[8].cut < 2) || state.scannerUsed || !state.active || !state.initialClueSelected;
 }
 
 function renderBoard() {
@@ -526,6 +526,7 @@ function clearMatchHistory() {
 }
 
 // --- CEREBRO ÚNICO TÁCTICO PARA CUALQUIER JUGADOR (BOT O SIMULACIÓN) ---
+// --- CEREBRO ÚNICO TÁCTICO PARA CUALQUIER JUGADOR (BOT O SIMULACIÓN) ---
 function executeSingleTurn(bot) {
     if (!state.active || state.lives <= 0) return false;
     const botHand = state.matrix[bot].filter(c => !c.cut);
@@ -571,9 +572,10 @@ function executeSingleTurn(bot) {
         }
     }
 
-    // PRIORIDAD 2: Herramientas (Detector Doble Oficial)
+    // PRIORIDAD 2: Herramientas (Detector Doble y Escáner)
     if (!executed) {
-        if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut === 4) {
+        // REGLA OFICIAL APLICADA: El Escáner (valor 8) se desbloquea con 2 o más cables cortados
+        if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut >= 2) {
             const targetP = (bot + 1) % 4;
             const queryVal = botHand[0].value;
             const count = state.matrix[targetP].filter(c => c.value === queryVal && !c.cut).length;
@@ -724,7 +726,8 @@ function executeSingleTurn(bot) {
             const bestMove = possibleMoves[0];
             const validCandidateCard = reversedHand.find(c => c.value === bestMove.guessValue);
 
-            if (bestMove.hitChance < 1 && !state.pliersUsed && state.inventory[5] && state.inventory[5].cut === 4) {
+            // REGLA OFICIAL APLICADA: Los Alicates (valor 5) se desbloquean con 2 o más cables cortados
+            if (bestMove.hitChance < 1 && !state.pliersUsed && state.inventory[5] && state.inventory[5].cut >= 2) {
                 state.pliersActive = true; state.pliersUsed = true;
                 log(`🔧 ${PLAYERS[bot]} activa los Alicates de Precisión ante un corte de riesgo.`, "#38bdf8");
                 updateToolsState();
