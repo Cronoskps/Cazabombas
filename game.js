@@ -492,7 +492,7 @@ function executeSingleTurn(bot) {
     const botHand = state.matrix[bot].filter(c => !c.cut);
     if (botHand.length === 0) return false;
 
-    // REGLA OFICIAL: Revelar Rojos si solo quedan trampas en mano
+    // REGLA OFICIAL: Revelar Rojos solo si NO quedan cables azules ni amarillos en mano
     if (botHand.every(c => c.isRed)) {
         botHand.forEach(c => { c.revealed = true; c.cut = true; state.inventory[c.value].cut++; });
         log(`🔴 ¡CABLES ROJOS REVELADOS! ${PLAYERS[bot]} revela sus trampas y las desactiva con seguridad.`, "#10b981");
@@ -503,24 +503,51 @@ function executeSingleTurn(bot) {
     const countByValue = {};
     botHand.forEach(c => countByValue[c.value] = (countByValue[c.value] || 0) + 1);
 
+    // PRIORIDAD 0: Autocortes de pares o cuartetos (Regla oficial: estrictamente de 2 en 2 o 4)
     for (const valStr in countByValue) {
         const val = parseFloat(valStr);
         const count = countByValue[val];
         const inv = state.inventory[val];
 
-        if (count === 4 || (count === 2 && inv.trackerTotal === 4 && inv.cut >= 2) || (count === inv.inDeckCount && inv.inDeckCount <= 2 && inv.cut === 0)) {
+        // Los cables rojos NUNCA se autocortan
+        if (inv.isRed) continue;
+
+        const isFullQuartet = (count === 4);
+        const isRemainingPair = (count === 2 && inv.trackerTotal === 4 && inv.cut >= 2);
+        // Autocorte de pareja amarilla idéntica (Modo Clásico)
+        const isYellowPairBasic = (count === 2 && inv.isYellow && inv.trackerTotal === 2 && inv.cut === 0);
+
+        if (isFullQuartet || isRemainingPair || isYellowPairBasic) {
             const cardsToCut = botHand.filter(c => c.value === val);
-            const positions = cardsToCut.map(c => c.pos).join(" y ");
-            log(`✂️ ¡AUTOCORTE! ${PLAYERS[bot]} descarta automáticamente sus cables de valor ${val} (posiciones ${positions}).`, "#10b981");
-            cardsToCut.forEach(c => { c.cut = true; c.revealed = true; });
-            inv.cut += cardsToCut.length;
-            return true;
+            if (cardsToCut.length >= 2) {
+                const positions = cardsToCut.map(c => c.pos).join(" y ");
+                log(`✂️ ¡AUTOCORTE! ${PLAYERS[bot]} descarta automáticamente sus cables de valor ${val} (posiciones ${positions}).`, "#10b981");
+                cardsToCut.forEach(c => { c.cut = true; c.revealed = true; });
+                inv.cut += cardsToCut.length;
+                return true;
+            }
         }
+    }
+
+    // Autocorte de cables amarillos en Modo Avanzado (si tiene 2 o más y son todos los que quedan)
+    const myYellows = botHand.filter(c => c.isYellow);
+    const totalRemainingYellows = Object.values(state.inventory)
+        .filter(inv => inv.isYellow)
+        .reduce((acc, curr) => acc + (curr.inDeckCount - curr.cut), 0);
+
+    if (myYellows.length >= 2 && myYellows.length === totalRemainingYellows) {
+        // Cortar de dos en dos
+        const pair = [myYellows[0], myYellows[1]];
+        pair.forEach(c => { c.cut = true; c.revealed = true; state.inventory[c.value].cut++; });
+        log(`✂️ ¡AUTOCORTE AMARILLO! ${PLAYERS[bot]} posee todos los cables amarillos restantes y descarta el par (${pair[0].pos} y ${pair[1].pos}).`, "#10b981");
+        return true;
     }
 
     const reversedHand = [...botHand].reverse();
 
+    // PRIORIDAD 1: Pistas Públicas Seguras
     for (let myCard of reversedHand) {
+        if (myCard.isRed) continue; // Un bot no arriesga su cable rojo en cortes ordinarios
         for (let otherP = 0; otherP < 4; otherP++) {
             if (otherP === bot) continue;
             const match = state.matrix[otherP].find(c => !c.cut && (c.clue || (otherP !== 0 && c.revealed)) && c.value === myCard.value);
@@ -533,10 +560,11 @@ function executeSingleTurn(bot) {
         }
     }
 
+    // PRIORIDAD 2: Herramientas (Detector Doble y Escáner)
     if (!executed) {
         if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut >= 2) {
             const targetP = (bot + 1) % 4;
-            const queryVal = botHand[0].value;
+            const queryVal = botHand.find(c => !c.isRed)?.value || botHand[0].value;
             const count = state.matrix[targetP].filter(c => c.value === queryVal && !c.cut).length;
             state.scannerUsed = true;
             log(`📡 ${PLAYERS[bot]} activa el Escáner con ${PLAYERS[targetP]}: confirma que tiene ${count} copia(s) del número ${queryVal}.`, "#38bdf8");
@@ -557,11 +585,10 @@ function executeSingleTurn(bot) {
                         let maxB = 12; for (let j = i + 2; j < targetRack.length; j++) { if (targetRack[j].revealed || targetRack[j].cut) { maxB = targetRack[j].value; break; } }
 
                         if (maxB - minB <= 3) {
-                            const candidate = reversedHand.find(c => c.value > minB && c.value < maxB);
+                            const candidate = reversedHand.find(c => !c.isRed && c.value > minB && c.value < maxB);
                             if (candidate) {
                                 const val = candidate.value;
                                 const copiesInHand = botHand.filter(h => h.value === val).length;
-                                // IA usa trackerTotal, no sabe si es un Misterio
                                 const remaining = state.inventory[val].trackerTotal - state.inventory[val].cut - copiesInHand;
 
                                 if (remaining > 0) {
@@ -595,6 +622,7 @@ function executeSingleTurn(bot) {
         }
     }
 
+    // PRIORIDAD 3: Deducción Probabilística
     if (!executed) {
         const ALL_VALUES = Object.keys(state.inventory).map(Number);
         let possibleMoves = [];
@@ -621,7 +649,7 @@ function executeSingleTurn(bot) {
                 }
                 if (totalRemainingInRange === 0) continue;
 
-                const uniqueVals = [...new Set(botHand.map(c => c.value))];
+                const uniqueVals = [...new Set(botHand.filter(c => !c.isRed).map(c => c.value))];
                 for (let val of uniqueVals) {
                     if (val < minBound || val > maxBound) continue;
 
@@ -697,7 +725,7 @@ function executeSingleTurn(bot) {
                 bestMove.targetCard.revealed = true;
             }
         } else {
-            const fallbackCandidate = reversedHand[0];
+            const fallbackCandidate = reversedHand.find(c => !c.isRed) || reversedHand[0];
             const fallbackTargetP = (bot + 1) % 4;
             const fallbackCard = state.matrix[fallbackTargetP].find(c => !c.cut && !c.revealed) || state.matrix[fallbackTargetP].find(c => !c.cut);
 
