@@ -5,13 +5,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cazabombas 💣 - Consola Táctica</title>
-    <!-- Vinculación del archivo CSS externo -->
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
+    <!-- MENÚ PRINCIPAL -->
+    <div id="main-menu" class="menu-container">
+        <h1 class="title" style="font-size: 3rem; margin-bottom: 10px;">CAZABOMBAS 💣</h1>
+        <p style="color: #94a3b8; font-size: 1.2rem; margin-bottom: 30px;">Simulador de IA Táctica</p>
 
-    <div class="container">
+        <button class="menu-btn basic" onclick="startGame('basic')">
+            🟢 Misión Intermedia (Clásica)<br>
+            <span style="font-size: 0.9rem; font-weight: normal;">Cables estándar + 4 Amarillos</span>
+        </button>
+
+        <button class="menu-btn advanced" onclick="startGame('advanced')">
+            🔴 Misión Experta (Rojos y Misterio)<br>
+            <span style="font-size: 0.9rem; font-weight: normal;">Muerte Súbita + Incertidumbre de Reparto</span>
+        </button>
+    </div>
+
+    <!-- CONTENEDOR DEL JUEGO -->
+    <div class="container" id="game-container" style="display:none;">
         <header>
             <h1 class="title">CAZABOMBAS 💣</h1>
             <div class="lives" id="lives-display">❤️❤️❤️</div>
@@ -25,19 +40,20 @@
                     id="dual-charges">2</span>)</button>
             <button class="tool-btn" id="self-cut-btn" onclick="triggerSelfPairCut()"
                 style="background:#0369a1; border-color:#38bdf8;">✂️ Cortar Pareja Propia</button>
+            <button class="tool-btn" id="reveal-reds-btn" onclick="triggerRevealReds()"
+                style="display:none; background:#b91c1c; border-color:#991b1b;">🔴 Revelar Rojos</button>
             <button class="tool-btn" id="pliers-btn" disabled onclick="usePliers()">🔧 Alicates (2/4 del 5)</button>
             <button class="tool-btn" id="scanner-btn" disabled onclick="useScanner()">📡 Escáner (2/4 del 8)</button>
             <button class="tool-btn" id="advance-bots-btn"
                 style="display:none; background:#16a34a; border-color:#22c55e;" onclick="executeBotRounds()">▶️
                 Siguiente Ronda IA</button>
-            <button class="tool-btn" style="margin-left:auto; background:#dc2626; border-color:#ef4444;"
-                onclick="initGame()">🔄 Reiniciar</button>
+            <button class="tool-btn" style="margin-left:auto; background:#475569; border-color:#64748b;"
+                onclick="returnToMenu()">🏠 Menú</button>
         </div>
 
         <div class="board" id="board-container"></div>
         <div id="terminal"></div>
 
-        <!-- Panel secundario de auditoría al pie de la página -->
         <footer class="footer-admin">
             <span class="footer-label">Gestión de Partidas (Logs):</span>
             <div class="footer-actions">
@@ -57,7 +73,6 @@
         </div>
     </div>
 
-    <!-- Vinculación del script JS externo -->
     <script src="game.js"></script>
 </body>
 
