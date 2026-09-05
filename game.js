@@ -322,13 +322,21 @@ function submitGuess(guess) {
         return;
     }
 
-    if (targetCable.value === guess) {
-        log(`¡CORTE EXITOSO! Cortaste el ${guess} en ${PLAYERS[target.pIdx]} (${targetCable.pos}).`, "#10b981");
+    // REGLA OFICIAL: Si ambos son amarillos, coinciden sin importar el decimal
+    const isMatch = (targetCable.value === guess) || (targetCable.isYellow && playerCard.isYellow);
+
+    if (isMatch) {
+        const guessStr = playerCard.isYellow ? 'AMARILLO🟡' : guess;
+        log(`¡CORTE EXITOSO! Cortaste el ${guessStr} en ${PLAYERS[target.pIdx]} (${targetCable.pos}).`, "#10b981");
         targetCable.cut = true; targetCable.revealed = true;
-        playerCard.cut = true; state.inventory[guess].cut += 2;
+        playerCard.cut = true;
+
+        // Sumamos al inventario de cada decimal por separado para mantener el rastreador exacto
+        state.inventory[targetCable.value].cut++;
+        state.inventory[playerCard.value].cut++;
     } else {
         if (state.pliersActive) {
-            log(`¡Fallo protegido por Alicates! La posición ${targetCable.pos} era ${targetCable.value}. No pierden vidas ni detona el rojo.`, "#38bdf8");
+            log(`¡Fallo protegido por Alicates! La posición ${targetCable.pos} era ${targetCable.value}. No explota el rojo ni pierden vidas.`, "#38bdf8");
             state.pliersActive = false;
         } else {
             if (targetCable.isRed) {
@@ -492,7 +500,6 @@ function executeSingleTurn(bot) {
     const botHand = state.matrix[bot].filter(c => !c.cut);
     if (botHand.length === 0) return false;
 
-    // REGLA OFICIAL: Revelar Rojos solo si NO quedan cables azules ni amarillos en mano
     if (botHand.every(c => c.isRed)) {
         botHand.forEach(c => { c.revealed = true; c.cut = true; state.inventory[c.value].cut++; });
         log(`🔴 ¡CABLES ROJOS REVELADOS! ${PLAYERS[bot]} revela sus trampas y las desactiva con seguridad.`, "#10b981");
@@ -503,18 +510,15 @@ function executeSingleTurn(bot) {
     const countByValue = {};
     botHand.forEach(c => countByValue[c.value] = (countByValue[c.value] || 0) + 1);
 
-    // PRIORIDAD 0: Autocortes de pares o cuartetos (Regla oficial: estrictamente de 2 en 2 o 4)
     for (const valStr in countByValue) {
         const val = parseFloat(valStr);
         const count = countByValue[val];
         const inv = state.inventory[val];
 
-        // Los cables rojos NUNCA se autocortan
         if (inv.isRed) continue;
 
         const isFullQuartet = (count === 4);
         const isRemainingPair = (count === 2 && inv.trackerTotal === 4 && inv.cut >= 2);
-        // Autocorte de pareja amarilla idéntica (Modo Clásico)
         const isYellowPairBasic = (count === 2 && inv.isYellow && inv.trackerTotal === 2 && inv.cut === 0);
 
         if (isFullQuartet || isRemainingPair || isYellowPairBasic) {
@@ -529,14 +533,12 @@ function executeSingleTurn(bot) {
         }
     }
 
-    // Autocorte de cables amarillos en Modo Avanzado (si tiene 2 o más y son todos los que quedan)
     const myYellows = botHand.filter(c => c.isYellow);
     const totalRemainingYellows = Object.values(state.inventory)
         .filter(inv => inv.isYellow)
         .reduce((acc, curr) => acc + (curr.inDeckCount - curr.cut), 0);
 
     if (myYellows.length >= 2 && myYellows.length === totalRemainingYellows) {
-        // Cortar de dos en dos
         const pair = [myYellows[0], myYellows[1]];
         pair.forEach(c => { c.cut = true; c.revealed = true; state.inventory[c.value].cut++; });
         log(`✂️ ¡AUTOCORTE AMARILLO! ${PLAYERS[bot]} posee todos los cables amarillos restantes y descarta el par (${pair[0].pos} y ${pair[1].pos}).`, "#10b981");
@@ -545,22 +547,29 @@ function executeSingleTurn(bot) {
 
     const reversedHand = [...botHand].reverse();
 
-    // PRIORIDAD 1: Pistas Públicas Seguras
+    // PRIORIDAD 1: Pistas Públicas Seguras (AHORA SOPORTA AMARILLOS)
     for (let myCard of reversedHand) {
-        if (myCard.isRed) continue; // Un bot no arriesga su cable rojo en cortes ordinarios
+        if (myCard.isRed) continue;
         for (let otherP = 0; otherP < 4; otherP++) {
             if (otherP === bot) continue;
-            const match = state.matrix[otherP].find(c => !c.cut && (c.clue || (otherP !== 0 && c.revealed)) && c.value === myCard.value);
+
+            const match = state.matrix[otherP].find(c =>
+                !c.cut &&
+                (c.clue || (otherP !== 0 && c.revealed)) &&
+                (c.value === myCard.value || (c.isYellow && myCard.isYellow)) // REGLA OFICIAL AMARILLOS
+            );
+
             if (match) {
-                log(`${PLAYERS[bot]} ve la pista de ${PLAYERS[otherP]} (${match.pos}: ${match.value}) y corta con su ${myCard.pos}.`, "#0284c7");
+                const valStr = myCard.isYellow ? 'AMARILLO🟡' : myCard.value;
+                log(`${PLAYERS[bot]} ve la pista de ${PLAYERS[otherP]} (${match.pos}) y corta con su ${myCard.pos} (${valStr}).`, "#0284c7");
                 match.cut = true; match.revealed = true; myCard.cut = true; myCard.revealed = true;
-                state.inventory[myCard.value].cut += 2;
+                state.inventory[myCard.value].cut++;
+                state.inventory[match.value].cut++;
                 return true;
             }
         }
     }
 
-    // PRIORIDAD 2: Herramientas (Detector Doble y Escáner)
     if (!executed) {
         if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut >= 2) {
             const targetP = (bot + 1) % 4;
@@ -622,7 +631,6 @@ function executeSingleTurn(bot) {
         }
     }
 
-    // PRIORIDAD 3: Deducción Probabilística
     if (!executed) {
         const ALL_VALUES = Object.keys(state.inventory).map(Number);
         let possibleMoves = [];
