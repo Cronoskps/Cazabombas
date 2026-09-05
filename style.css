@@ -392,3 +392,135 @@ header {
     transform: translateY(2px);
     border-bottom: 0;
 }
+
+/* =========================================
+   DISEÑO RESPONSIVE (MÓVILES Y TABLETS)
+   ========================================= */
+@media (max-width: 768px) {
+
+    /* Ajustes del Menú Principal */
+    #main-menu .title {
+        font-size: 2.2rem !important;
+        text-align: center;
+    }
+
+    .menu-btn {
+        width: 90% !important;
+        /* Ocupa casi todo el ancho del celular */
+        padding: 15px;
+        font-size: 1rem;
+    }
+
+    /* Cabecera y Rastreador */
+    header .title {
+        font-size: 1.5rem;
+    }
+
+    #tracker-bar {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+        gap: 5px;
+        font-size: 0.75rem;
+        padding: 5px;
+    }
+
+    .track-item {
+        padding: 4px;
+    }
+
+    /* Barras de Herramientas (Botones apilados para poder tocarlos fácil) */
+    .controls-section {
+        gap: 15px;
+    }
+
+    .tools-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 10px;
+    }
+
+    .tools-bar>div {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        gap: 8px;
+    }
+
+    .tool-btn {
+        width: 100%;
+        margin-left: 0 !important;
+        /* Resetea el margen automático */
+        padding: 12px;
+        font-size: 0.95rem;
+    }
+
+    /* El Tablero y las Cartas (Racks) */
+    .rack {
+        padding: 8px;
+        margin-bottom: 10px;
+    }
+
+    .rack-header {
+        flex-direction: column;
+        align-items: flex-start;
+        font-size: 0.85rem;
+        gap: 4px;
+    }
+
+    .cables-row {
+        flex-wrap: wrap;
+        /* ¡Clave! Hace que las cartas bajen a una nueva línea si no caben */
+        justify-content: center;
+        gap: 6px;
+    }
+
+    .cable-btn {
+        width: 42px;
+        /* Un poco más angostas */
+        height: 60px;
+        /* Un poco más cortas */
+        font-size: 1rem;
+        padding: 2px;
+    }
+
+    .pos-label {
+        font-size: 0.65rem;
+    }
+
+    /* Consola de Logs (Terminal) */
+    #terminal {
+        height: 180px;
+        font-size: 0.85rem;
+        padding: 8px;
+    }
+
+    /* Teclado Modal (Para adivinar números) */
+    .modal {
+        width: 95%;
+        padding: 15px;
+    }
+
+    #modal-keypad {
+        grid-template-columns: repeat(3, 1fr);
+        /* 3 columnas en lugar de una fila larga */
+        gap: 8px;
+    }
+
+    .keypad-btn {
+        padding: 15px 5px;
+        font-size: 1rem;
+    }
+
+    /* Footer de Auditoría */
+    .footer-admin {
+        flex-direction: column;
+        text-align: center;
+        gap: 10px;
+    }
+
+    .footer-actions {
+        width: 100%;
+        flex-direction: column;
+    }
+}
