@@ -272,25 +272,40 @@ function triggerSelfPairCut() {
     const val = parseFloat(valInput);
     if (!state.inventory[val]) { alert("Número no válido."); return; }
 
-    const activeCopies = state.matrix[0].filter(c => c.value === val && !c.cut);
-    if (activeCopies.length < 2) { alert(`No tienes suficientes copias activas.`); return; }
+    if (state.inventory[val].isYellow) {
+        const myYellows = state.matrix[0].filter(c => c.isYellow && !c.cut);
+        const totalRemainingYellows = Object.values(state.inventory)
+            .filter(inv => inv.isYellow)
+            .reduce((acc, curr) => acc + (curr.inDeckCount - curr.cut), 0);
 
-    if (activeCopies.length === 4) {
-        activeCopies.forEach(c => c.cut = true);
-        state.inventory[val].cut += 4;
-        log(`💣 ¡CUARTETO COMPLETO EN MANO! Descartaste tus 4 cables del ${val} simultáneamente.`, "#10b981");
-    } else if ((state.inventory[val].isYellow || state.inventory[val].isRed) && activeCopies.length === state.inventory[val].inDeckCount) {
-        activeCopies.forEach(c => c.cut = true);
-        state.inventory[val].cut += activeCopies.length;
-        log(`✂️ ¡PAREJA ESPECIAL DESCARTADA! Descartaste tus cables especiales ${val}.`, "#10b981");
-    } else {
-        if (state.inventory[val].cut < 2) {
-            alert(`Reglamento: No puedes cortar una pareja propia desde cero (0/4).`);
+        if (myYellows.length < 2) { alert("No tienes suficientes cables amarillos para hacer un autocorte."); return; }
+        if (myYellows.length !== totalRemainingYellows) {
+            alert("Reglamento: Solo puedes autocortar cables amarillos si posees TODOS los amarillos que quedan en el juego.");
             return;
         }
-        activeCopies[0].cut = true; activeCopies[1].cut = true;
-        state.inventory[val].cut += 2;
-        log(`✂️ ¡AUTOCORTE EN PAREJA! Descartaste tu pareja de posiciones ${activeCopies[0].pos} y ${activeCopies[1].pos}.`, "#10b981");
+
+        const pair = [myYellows[0], myYellows[1]];
+        pair.forEach(c => c.cut = true);
+        state.inventory[pair[0].value].cut++;
+        state.inventory[pair[1].value].cut++;
+        log(`✂️ ¡AUTOCORTE AMARILLO! Descartaste una pareja de amarillos (${pair[0].pos} y ${pair[1].pos}).`, "#10b981");
+    } else {
+        const activeCopies = state.matrix[0].filter(c => c.value === val && !c.cut);
+        if (activeCopies.length < 2) { alert(`No tienes suficientes copias activas.`); return; }
+
+        if (activeCopies.length === 4) {
+            activeCopies.forEach(c => c.cut = true);
+            state.inventory[val].cut += 4;
+            log(`💣 ¡CUARTETO COMPLETO EN MANO! Descartaste tus 4 cables del ${val} simultáneamente.`, "#10b981");
+        } else {
+            if (state.inventory[val].cut < 2) {
+                alert(`Reglamento: No puedes cortar una pareja propia desde cero (0/4).`);
+                return;
+            }
+            activeCopies[0].cut = true; activeCopies[1].cut = true;
+            state.inventory[val].cut += 2;
+            log(`✂️ ¡AUTOCORTE EN PAREJA! Descartaste tu pareja de posiciones ${activeCopies[0].pos} y ${activeCopies[1].pos}.`, "#10b981");
+        }
     }
 
     checkGameState(); renderTracker(); renderBoard(); updateToolsState();
@@ -315,10 +330,15 @@ function submitGuess(guess) {
     if (!target) return;
 
     const targetCable = state.matrix[target.pIdx][target.cIdx];
-    const playerCard = state.matrix[0].find(c => c.value === guess && !c.cut);
+
+    // Buscar la carta exacta, o si es un amarillo, buscar cualquier amarillo en tu mano
+    let playerCard = state.matrix[0].find(c => c.value === guess && !c.cut);
+    if (!playerCard && state.inventory[guess]?.isYellow) {
+        playerCard = state.matrix[0].find(c => c.isYellow && !c.cut);
+    }
 
     if (!playerCard) {
-        log(`Acción no válida: No posees ninguna copia activa del ${guess} en tu atril.`, "#f59e0b");
+        log(`Acción no válida: No posees ninguna copia activa para el valor declarado.`, "#f59e0b");
         return;
     }
 
@@ -379,15 +399,21 @@ function triggerDualDetector() {
     if (!card2) { alert("Segunda posición no válida."); return; }
 
     state.dualCharges--;
+    const isYellowVal = state.inventory[guessVal]?.isYellow;
 
-    if (card1.value === guessVal || card2.value === guessVal) {
-        const hitCard = (card1.value === guessVal) ? card1 : card2;
+    if (card1.value === guessVal || card2.value === guessVal || (isYellowVal && (card1.isYellow || card2.isYellow))) {
+        const hitCard = (card1.value === guessVal || (isYellowVal && card1.isYellow)) ? card1 : card2;
         hitCard.clue = true; hitCard.revealed = true;
-        log(`🔍 Detector Doble: ¡ÉXITO! ${PLAYERS[pIdx]} confirma que el número ${guessVal} está en la casilla ${hitCard.pos}.`, "#38bdf8");
-        const playerMatch = [...state.matrix[0].filter(c => !c.cut)].reverse().find(c => c.value === hitCard.value);
+
+        const nameStr = isYellowVal ? 'AMARILLO🟡' : guessVal;
+        log(`🔍 Detector Doble: ¡ÉXITO! ${PLAYERS[pIdx]} confirma que un ${nameStr} está en la casilla ${hitCard.pos}.`, "#38bdf8");
+
+        const playerMatch = [...state.matrix[0].filter(c => !c.cut)].reverse().find(c => c.value === hitCard.value || (hitCard.isYellow && c.isYellow));
         if (playerMatch) {
-            log(`✂️ ¡CORTE SIMULTÁNEO! Coincide con tu posición ${playerMatch.pos} (${playerMatch.value}).`, "#10b981");
-            hitCard.cut = true; playerMatch.cut = true; state.inventory[hitCard.value].cut += 2;
+            log(`✂️ ¡CORTE SIMULTÁNEO! Coincide con tu posición ${playerMatch.pos}.`, "#10b981");
+            hitCard.cut = true; playerMatch.cut = true;
+            state.inventory[hitCard.value].cut++;
+            state.inventory[playerMatch.value].cut++;
         }
     } else {
         state.lives--;
@@ -413,8 +439,12 @@ function useScanner() {
     const num = parseFloat(prompt("¿Qué número consultar? (ej: 4, 8 o 4.5):"));
     if (isNaN(num)) return;
 
-    const count = state.matrix[targetP].filter(c => c.value === num && !c.cut).length;
-    log(`📡 Escáner usado con ${PLAYERS[targetP]}: tiene ${count} cable(s) del número ${num}.`, "#38bdf8");
+    const isYellowQuery = state.inventory[num]?.isYellow;
+    const count = state.matrix[targetP].filter(c => !c.cut && (c.value === num || (isYellowQuery && c.isYellow))).length;
+
+    const nameStr = isYellowQuery ? 'AMARILLO🟡' : num;
+    log(`📡 Escáner usado con ${PLAYERS[targetP]}: tiene ${count} cable(s) del valor ${nameStr}.`, "#38bdf8");
+
     state.scannerUsed = true; updateToolsState();
     if (state.active && state.lives > 0) setTimeout(executeBotRounds, 800);
 }
@@ -515,13 +545,12 @@ function executeSingleTurn(bot) {
         const count = countByValue[val];
         const inv = state.inventory[val];
 
-        if (inv.isRed) continue;
+        if (inv.isRed || inv.isYellow) continue; // Amarillos y Rojos se manejan aparte
 
         const isFullQuartet = (count === 4);
         const isRemainingPair = (count === 2 && inv.trackerTotal === 4 && inv.cut >= 2);
-        const isYellowPairBasic = (count === 2 && inv.isYellow && inv.trackerTotal === 2 && inv.cut === 0);
 
-        if (isFullQuartet || isRemainingPair || isYellowPairBasic) {
+        if (isFullQuartet || isRemainingPair) {
             const cardsToCut = botHand.filter(c => c.value === val);
             if (cardsToCut.length >= 2) {
                 const positions = cardsToCut.map(c => c.pos).join(" y ");
@@ -547,7 +576,6 @@ function executeSingleTurn(bot) {
 
     const reversedHand = [...botHand].reverse();
 
-    // PRIORIDAD 1: Pistas Públicas Seguras (AHORA SOPORTA AMARILLOS)
     for (let myCard of reversedHand) {
         if (myCard.isRed) continue;
         for (let otherP = 0; otherP < 4; otherP++) {
@@ -556,7 +584,7 @@ function executeSingleTurn(bot) {
             const match = state.matrix[otherP].find(c =>
                 !c.cut &&
                 (c.clue || (otherP !== 0 && c.revealed)) &&
-                (c.value === myCard.value || (c.isYellow && myCard.isYellow)) // REGLA OFICIAL AMARILLOS
+                (c.value === myCard.value || (c.isYellow && myCard.isYellow))
             );
 
             if (match) {
@@ -574,9 +602,12 @@ function executeSingleTurn(bot) {
         if (!state.scannerUsed && state.inventory[8] && state.inventory[8].cut >= 2) {
             const targetP = (bot + 1) % 4;
             const queryVal = botHand.find(c => !c.isRed)?.value || botHand[0].value;
-            const count = state.matrix[targetP].filter(c => c.value === queryVal && !c.cut).length;
+            const isYellowQuery = state.inventory[queryVal]?.isYellow;
+            const count = state.matrix[targetP].filter(c => !c.cut && (c.value === queryVal || (isYellowQuery && c.isYellow))).length;
+
             state.scannerUsed = true;
-            log(`📡 ${PLAYERS[bot]} activa el Escáner con ${PLAYERS[targetP]}: confirma que tiene ${count} copia(s) del número ${queryVal}.`, "#38bdf8");
+            const nameStr = isYellowQuery ? 'AMARILLO🟡' : queryVal;
+            log(`📡 ${PLAYERS[bot]} activa el Escáner con ${PLAYERS[targetP]}: confirma que tiene ${count} copia(s) del valor ${nameStr}.`, "#38bdf8");
             updateToolsState();
             return true;
         }
@@ -597,18 +628,28 @@ function executeSingleTurn(bot) {
                             const candidate = reversedHand.find(c => !c.isRed && c.value > minB && c.value < maxB);
                             if (candidate) {
                                 const val = candidate.value;
-                                const copiesInHand = botHand.filter(h => h.value === val).length;
-                                const remaining = state.inventory[val].trackerTotal - state.inventory[val].cut - copiesInHand;
+                                const isYellowVal = state.inventory[val]?.isYellow;
+                                const copiesInHand = botHand.filter(h => h.value === val || (isYellowVal && h.isYellow)).length;
 
-                                if (remaining > 0) {
+                                // Si es amarillo en modo básico, trackerTotal es 2 para 4.5 y 2 para 9.5. Ajustamos el conteo sumando todo.
+                                let totalRemaining = 0;
+                                if (isYellowVal) {
+                                    totalRemaining = Object.values(state.inventory).filter(inv => inv.isYellow).reduce((a, b) => a + (b.trackerTotal - b.cut), 0) - copiesInHand;
+                                } else {
+                                    totalRemaining = state.inventory[val].trackerTotal - state.inventory[val].cut - copiesInHand;
+                                }
+
+                                if (totalRemaining > 0) {
                                     state.dualCharges--;
-                                    log(`🔍 ${PLAYERS[bot]} usa Detector Doble sobre ${PLAYERS[targetP]}: ¿El número ${val} está en ${c1.pos} o ${c2.pos}?`, "#38bdf8");
+                                    const nameStr = isYellowVal ? 'AMARILLO🟡' : val;
+                                    log(`🔍 ${PLAYERS[bot]} usa Detector Doble sobre ${PLAYERS[targetP]}: ¿El ${nameStr} está en ${c1.pos} o ${c2.pos}?`, "#38bdf8");
 
-                                    if (c1.value === val || c2.value === val) {
-                                        const hitCard = (c1.value === val) ? c1 : c2;
+                                    if (c1.value === val || c2.value === val || (isYellowVal && (c1.isYellow || c2.isYellow))) {
+                                        const hitCard = (c1.value === val || (isYellowVal && c1.isYellow)) ? c1 : c2;
                                         log(`✅ ¡ÉXITO! ${PLAYERS[targetP]} confirma y corta la casilla ${hitCard.pos}.`, "#10b981");
                                         hitCard.cut = true; hitCard.revealed = true; candidate.cut = true;
-                                        state.inventory[val].cut += 2;
+                                        state.inventory[hitCard.value].cut++;
+                                        state.inventory[candidate.value].cut++;
                                     } else {
                                         state.lives--;
                                         log(`❌ NEGATIVO. Pierden 1 vida, pero se revela información vital...`, "#ef4444");
@@ -711,11 +752,15 @@ function executeSingleTurn(bot) {
                 updateToolsState();
             }
 
-            if (bestMove.targetCard.value === bestMove.guessValue) {
+            if (bestMove.targetCard.value === bestMove.guessValue || (state.inventory[bestMove.guessValue]?.isYellow && bestMove.targetCard.isYellow)) {
                 const probabilityStr = (bestMove.hitChance * 100).toFixed(0);
-                log(`${PLAYERS[bot]} calculó un ${probabilityStr}% de éxito y corta el ${bestMove.guessValue} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}).`, "#10b981");
+                const nameStr = bestMove.targetCard.isYellow ? 'AMARILLO🟡' : bestMove.guessValue;
+
+                log(`${PLAYERS[bot]} calculó un ${probabilityStr}% de éxito y corta el ${nameStr} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}).`, "#10b981");
                 bestMove.targetCard.cut = true; bestMove.targetCard.revealed = true;
-                validCandidateCard.cut = true; state.inventory[bestMove.guessValue].cut += 2;
+                validCandidateCard.cut = true;
+                state.inventory[bestMove.targetCard.value].cut++;
+                state.inventory[validCandidateCard.value].cut++;
             } else {
                 if (state.pliersActive) {
                     log(`¡Fallo protegido por Alicates! ${PLAYERS[bot]} probó el ${bestMove.guessValue} en ${PLAYERS[bestMove.targetP]} (${bestMove.targetCard.pos}) y era un ${bestMove.targetCard.value}. No explota el rojo ni pierden vidas.`, "#38bdf8");
@@ -738,10 +783,12 @@ function executeSingleTurn(bot) {
             const fallbackCard = state.matrix[fallbackTargetP].find(c => !c.cut && !c.revealed) || state.matrix[fallbackTargetP].find(c => !c.cut);
 
             if (fallbackCard) {
-                if (fallbackCard.value === fallbackCandidate.value) {
-                    log(`${PLAYERS[bot]} arriesga a ciegas y corta con éxito el ${fallbackCandidate.value} en ${PLAYERS[fallbackTargetP]} (${fallbackCard.pos}).`, "#10b981");
+                if (fallbackCard.value === fallbackCandidate.value || (fallbackCard.isYellow && fallbackCandidate.isYellow)) {
+                    const nameStr = fallbackCandidate.isYellow ? 'AMARILLO🟡' : fallbackCandidate.value;
+                    log(`${PLAYERS[bot]} arriesga a ciegas y corta con éxito el ${nameStr} en ${PLAYERS[fallbackTargetP]} (${fallbackCard.pos}).`, "#10b981");
                     fallbackCard.cut = true; fallbackCard.revealed = true; fallbackCandidate.cut = true;
-                    state.inventory[fallbackCandidate.value].cut += 2;
+                    state.inventory[fallbackCard.value].cut++;
+                    state.inventory[fallbackCandidate.value].cut++;
                 } else {
                     if (fallbackCard.isRed && !state.pliersActive) {
                         state.lives = 0;
