@@ -1,0 +1,27 @@
+{
+  "name": "cazabombas",
+  "version": "1.0.0",
+  "description": "Simulador de IA Táctica - Cazabombas",
+  "main": "index.html",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cronoskps/Cazabombas.git"
+  },
+  "keywords": [
+    "game",
+    "javascript",
+    "html"
+  ],
+  "author": "Cronoskps",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Cronoskps/Cazabombas/issues"
+  },
+  "homepage": "https://github.com/Cronoskps/Cazabombas#readme",
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
+  }
+}
