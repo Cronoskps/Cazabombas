@@ -524,3 +524,49 @@ header {
         flex-direction: column;
     }
 }
+
+/* =========================================
+   SISTEMA DE NOTIFICACIONES (TOAST CINEMÁTICO)
+   ========================================= */
+.toast-overlay {
+    position: fixed;
+    top: 25%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.95);
+    border: 2px solid #38bdf8;
+    border-radius: 12px;
+    padding: 20px 30px;
+    text-align: center;
+    color: #f8fafc;
+    z-index: 2000;
+    width: 85%;
+    max-width: 500px;
+    box-shadow: 0px 15px 35px rgba(0, 0, 0, 0.8);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s;
+    pointer-events: none;
+    /* No bloquea clics por detrás */
+}
+
+.toast-overlay.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.toast-title {
+    font-weight: bold;
+    color: #facc15;
+    margin-bottom: 15px;
+    font-size: 1.3rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid #334155;
+    padding-bottom: 10px;
+}
+
+.toast-body {
+    font-size: 1.1rem;
+    line-height: 1.5;
+}

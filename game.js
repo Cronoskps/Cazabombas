@@ -13,6 +13,7 @@ let state = {
     scannerUsed: false,
     initialClueSelected: false,
     pendingTarget: null
+    isBotPlaying: false
 };
 
 // --- NAVEGACIÓN DEL MENÚ ---
@@ -28,14 +29,25 @@ function returnToMenu() {
     document.getElementById('main-menu').style.display = 'flex';
 }
 
+// --- SISTEMA DE LOGS Y POP-UPS ---
+let currentSessionLog = [];
+let currentToastLogs = []; // Guarda los mensajes del turno actual para el cartel
+
 function log(msg, color = "#94a3b8") {
+    // 1. Escribir en la terminal visual
     const term = document.getElementById('terminal');
-    const p = document.createElement('p');
-    p.className = 'log-entry';
-    p.style.color = color;
-    p.textContent = `> ${msg}`;
-    term.appendChild(p);
-    term.scrollTop = term.scrollHeight;
+    if (term) {
+        const p = document.createElement('p');
+        p.className = 'log-entry';
+        p.style.color = color;
+        p.textContent = `> ${msg}`;
+        term.appendChild(p);
+        term.scrollTop = term.scrollHeight;
+    }
+    // 2. Guardar en el historial de la partida
+    currentSessionLog.push(`> ${msg}`);
+    // 3. Preparar para el cartel flotante
+    currentToastLogs.push(`<span style="color: ${color}; display: block; margin-bottom: 8px;">${msg}</span>`);
 }
 
 function initGame() {
@@ -172,6 +184,9 @@ function updateToolsState() {
     const activeHand = state.matrix[0].filter(c => !c.cut);
     const myActiveCards = activeHand.length;
 
+    // Condición general: es tu turno si el juego está activo, fijaste tu pista y NO están jugando los bots
+    const isMyTurn = state.active && state.initialClueSelected && !state.isBotPlaying;
+
     document.getElementById('advance-bots-btn').style.display = (myActiveCards === 0 && state.active) ? 'inline-block' : 'none';
 
     // Botón Revelar Rojos (Solo Modo Avanzado)
@@ -179,11 +194,12 @@ function updateToolsState() {
     document.getElementById('reveal-reds-btn').style.display = (state.gameMode === 'advanced' && hasOnlyReds) ? 'inline-block' : 'none';
 
     document.getElementById('dual-charges').textContent = state.dualCharges;
-    document.getElementById('dual-detector-btn').disabled = state.dualCharges <= 0 || !state.active || !state.initialClueSelected;
-    document.getElementById('self-cut-btn').disabled = !state.active || !state.initialClueSelected || myActiveCards === 0;
 
-    document.getElementById('pliers-btn').disabled = (state.inventory[5].cut < 2) || state.pliersUsed || !state.active || !state.initialClueSelected;
-    document.getElementById('scanner-btn').disabled = (state.inventory[8].cut < 2) || state.scannerUsed || !state.active || !state.initialClueSelected;
+    // Se bloquean si NO es tu turno
+    document.getElementById('dual-detector-btn').disabled = state.dualCharges <= 0 || !isMyTurn;
+    document.getElementById('self-cut-btn').disabled = !isMyTurn || myActiveCards === 0;
+    document.getElementById('pliers-btn').disabled = (state.inventory[5].cut < 2) || state.pliersUsed || !isMyTurn;
+    document.getElementById('scanner-btn').disabled = (state.inventory[8].cut < 2) || state.scannerUsed || !isMyTurn;
 }
 
 function renderBoard() {
@@ -208,7 +224,7 @@ function renderBoard() {
 
             let colorClass = '';
             if (cable.isYellow && (pIdx === 0 || !isHidden)) colorClass = 'yellow';
-            if (cable.isRed && (pIdx === 0 || !isHidden)) colorClass = 'red'; // Puedes agregar .cable-btn.red en CSS
+            if (cable.isRed && (pIdx === 0 || !isHidden)) colorClass = 'red';
 
             btn.className = `cable-btn ${colorClass} ${isHidden ? 'hidden' : ''} ${cable.cut ? 'cut' : ''} ${cable.clue ? 'clue' : ''}`;
 
@@ -231,7 +247,8 @@ function renderBoard() {
             btn.appendChild(valSpan);
 
             if (pIdx === 0) {
-                btn.disabled = state.initialClueSelected || cable.cut;
+                // Bloquea tus propios cables si ya los cortaste, si ya pusiste la pista, o si está jugando el bot
+                btn.disabled = state.initialClueSelected || cable.cut || state.isBotPlaying;
                 btn.onclick = () => {
                     if (!state.initialClueSelected) {
                         if (cable.isYellow || cable.isRed) {
@@ -244,7 +261,8 @@ function renderBoard() {
                     }
                 };
             } else {
-                btn.disabled = !state.active || cable.cut || !state.initialClueSelected || state.matrix[0].filter(c => !c.cut).length === 0;
+                // AQUÍ ESTÁ EL BLOQUEO A LOS CABLES ENEMIGOS (state.isBotPlaying)
+                btn.disabled = !state.active || cable.cut || !state.initialClueSelected || state.matrix[0].filter(c => !c.cut).length === 0 || state.isBotPlaying;
                 if (!cable.cut) btn.onclick = () => openCutModal(pIdx, cIdx);
             }
             row.appendChild(btn);
@@ -471,14 +489,6 @@ function checkGameState() {
         saveFinishedGame("VICTORIA - CABLES COMPLETADOS");
     }
 }
-
-// --- SISTEMA DE LOG INTERNO MULTI-PARTIDA ---
-let currentSessionLog = [];
-const originalLog = log;
-log = function (msg, color = "#94a3b8") {
-    originalLog(msg, color);
-    currentSessionLog.push(`> ${msg}`);
-};
 
 function recordGameStart() {
     currentSessionLog = [];
@@ -805,19 +815,53 @@ function executeSingleTurn(bot) {
     return true;
 }
 
-function executeBotRounds() {
+// Herramienta para pausar el tiempo en milisegundos
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function showToast(title, bodyHTML, duration) {
+    const toast = document.getElementById('action-toast');
+    document.getElementById('toast-title').textContent = title;
+    document.getElementById('toast-body').innerHTML = bodyHTML;
+
+    toast.classList.add('show');
+    await sleep(duration);
+    toast.classList.remove('show');
+    await sleep(300); // Tiempo para que la animación de desvanecimiento termine
+}
+
+// NUEVO BUCLE DE BOTS CON LETARGO CINEMÁTICO
+async function executeBotRounds() {
+    if (state.isBotPlaying) return;
+    state.isBotPlaying = true;
+    updateToolsState(); renderBoard(); // Bloquear UI humana
+
     for (let bot = 1; bot <= 3; bot++) {
         if (!state.active || state.lives <= 0) break;
-        executeSingleTurn(bot);
+
+        currentToastLogs = []; // Limpiar los mensajes para este bot específico
+        const acted = executeSingleTurn(bot);
+
         checkGameState();
-        renderTracker(); renderBoard(); updateToolsState();
+        renderTracker(); renderBoard();
+
+        // Si el bot hizo algo, mostramos el cartel y pausamos el juego 3 segundos
+        if (acted && currentToastLogs.length > 0) {
+            await showToast(`Turno de ${PLAYERS[bot]}`, currentToastLogs.join(''), 3000);
+        }
     }
+
+    state.isBotPlaying = false;
+    updateToolsState(); renderBoard(); // Desbloquear UI humana
+
+    // Si tu atril está vacío, los bots siguen jugando automáticamente
     const myActiveCards = state.matrix[0].filter(c => !c.cut).length;
     if (myActiveCards === 0 && state.active && state.lives > 0) {
         const remainingGlobal = Object.values(state.inventory).reduce((acc, curr) => acc + (curr.inDeckCount - curr.cut), 0);
         if (remainingGlobal > 0) {
-            log("Atril del jugador completado. Los compañeros resuelven la mesa...", "#facc15");
-            setTimeout(executeBotRounds, 1200);
+            currentToastLogs = [];
+            log("Tu atril está completo. Los bots resuelven el resto de la mesa...", "#facc15");
+            await showToast("¡Atril Despejado!", currentToastLogs.join(''), 2500);
+            setTimeout(executeBotRounds, 500);
         }
     }
 }
