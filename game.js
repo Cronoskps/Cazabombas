@@ -13,7 +13,8 @@ let state = {
     scannerUsed: false,
     initialClueSelected: false,
     pendingTarget: null,
-    isBotPlaying: false
+    isBotPlaying: false,
+    matchId: 0
 };
 
 // --- NAVEGACIÓN DEL MENÚ ---
@@ -51,6 +52,13 @@ function log(msg, color = "#94a3b8") {
 }
 
 function initGame() {
+
+    state.matchId = Date.now(); // <--- Genera un ID único para esta partida
+
+    // Forzar cierre del cartel cinemático si se reinicia a mitad de turno
+    const toast = document.getElementById('action-toast');
+    if (toast) toast.classList.remove('show');
+
     state.lives = 3;
     state.active = true;
     state.dualCharges = 2;
@@ -830,27 +838,36 @@ async function showToast(title, bodyHTML, duration) {
 }
 
 // NUEVO BUCLE DE BOTS CON LETARGO CINEMÁTICO
+// NUEVO BUCLE DE BOTS CON LETARGO CINEMÁTICO Y PROTECCIÓN ASÍNCRONA
 async function executeBotRounds() {
     if (state.isBotPlaying) return;
     state.isBotPlaying = true;
+    const currentMatchId = state.matchId; // Guardamos el ID de la partida actual
+
     updateToolsState(); renderBoard(); // Bloquear UI humana
 
     for (let bot = 1; bot <= 3; bot++) {
-        if (!state.active || state.lives <= 0) break;
+        // Si el juego termina, O SI EL USUARIO REINICIÓ LA PARTIDA, abortamos el bucle
+        if (!state.active || state.lives <= 0 || state.matchId !== currentMatchId) break;
 
-        currentToastLogs = []; // Limpiar los mensajes para este bot específico
+        currentToastLogs = [];
         const acted = executeSingleTurn(bot);
 
         checkGameState();
         renderTracker(); renderBoard();
 
-        // Si el bot hizo algo, mostramos el cartel y pausamos el juego 5 segundos
         if (acted && currentToastLogs.length > 0) {
-            await showToast(`Turno de ${PLAYERS[bot]}`, currentToastLogs.join(''), 5000);
-            // Pausa de 1 segundo entre un bot y el siguiente antes de que aparezca el nuevo cartel
+            await showToast(`Turno de ${PLAYERS[bot]}`, currentToastLogs.join(''), 4500);
+
+            // Volvemos a verificar por si el usuario reinició mientras el cartel estaba en pantalla
+            if (state.matchId !== currentMatchId) break;
+
             await sleep(1000);
         }
     }
+
+    // Si hubo un reinicio, nos salimos sin desbloquear la UI de forma incorrecta
+    if (state.matchId !== currentMatchId) return;
 
     state.isBotPlaying = false;
     updateToolsState(); renderBoard(); // Desbloquear UI humana
@@ -862,8 +879,10 @@ async function executeBotRounds() {
         if (remainingGlobal > 0) {
             currentToastLogs = [];
             log("Tu atril está completo. Los bots resuelven el resto de la mesa...", "#facc15");
-            await showToast("¡Atril Despejado!", currentToastLogs.join(''), 2500);
-            setTimeout(executeBotRounds, 500);
+            await showToast("¡Atril Despejado!", currentToastLogs.join(''), 3500);
+
+            // Doble chequeo antes del último loop
+            if (state.matchId === currentMatchId) setTimeout(executeBotRounds, 500);
         }
     }
 }
