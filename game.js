@@ -12,7 +12,7 @@ let state = {
     pliersUsed: false,
     scannerUsed: false,
     initialClueSelected: false,
-    pendingTarget: null
+    pendingTarget: null,
     isBotPlaying: false
 };
 
