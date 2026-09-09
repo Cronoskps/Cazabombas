@@ -81,10 +81,15 @@ function initGame() {
     }
 
     if (state.gameMode === 'basic') {
-        state.inventory[4.5] = { trackerTotal: 2, inDeckCount: 2, cut: 0, isYellow: true };
-        state.inventory[9.5] = { trackerTotal: 2, inDeckCount: 2, cut: 0, isYellow: true };
-        deck.push({ value: 4.5, isYellow: true, isRed: false }, { value: 4.5, isYellow: true, isRed: false });
-        deck.push({ value: 9.5, isYellow: true, isRed: false }, { value: 9.5, isYellow: true, isRed: false });
+        const decimals = [1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5];
+        const yellowVals = [];
+        for (let i = 0; i < 4; i++) {
+            yellowVals.push(decimals.splice(Math.floor(Math.random() * decimals.length), 1)[0]);
+        }
+        yellowVals.forEach(yv => {
+            state.inventory[yv] = { trackerTotal: 1, inDeckCount: 1, cut: 0, isYellow: true };
+            deck.push({ value: yv, isYellow: true, isRed: false });
+        });
     } else if (state.gameMode === 'advanced') {
         const decimals = [1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5];
 
@@ -300,13 +305,9 @@ function triggerSelfPairCut() {
 
     if (state.inventory[val].isYellow) {
         const myYellows = state.matrix[0].filter(c => c.isYellow && !c.cut);
-        const totalRemainingYellows = Object.values(state.inventory)
-            .filter(inv => inv.isYellow)
-            .reduce((acc, curr) => acc + (curr.inDeckCount - curr.cut), 0);
 
-        if (myYellows.length < 2) { alert("No tienes suficientes cables amarillos para hacer un autocorte."); return; }
-        if (myYellows.length !== totalRemainingYellows) {
-            alert("Reglamento: Solo puedes autocortar cables amarillos si posees TODOS los amarillos que quedan en el juego.");
+        if (myYellows.length < 2) {
+            alert("No tienes suficientes cables amarillos para hacer un autocorte.");
             return;
         }
 
@@ -580,15 +581,12 @@ function executeSingleTurn(bot) {
         }
     }
 
+    // NUEVA REGLA: Autocorte de Amarillos liberado (solo necesita tener 2)
     const myYellows = botHand.filter(c => c.isYellow);
-    const totalRemainingYellows = Object.values(state.inventory)
-        .filter(inv => inv.isYellow)
-        .reduce((acc, curr) => acc + (curr.inDeckCount - curr.cut), 0);
-
-    if (myYellows.length >= 2 && myYellows.length === totalRemainingYellows) {
+    if (myYellows.length >= 2) {
         const pair = [myYellows[0], myYellows[1]];
         pair.forEach(c => { c.cut = true; c.revealed = true; state.inventory[c.value].cut++; });
-        log(`✂️ ¡AUTOCORTE AMARILLO! ${PLAYERS[bot]} posee todos los cables amarillos restantes y descarta el par (${pair[0].pos} y ${pair[1].pos}).`, "#10b981");
+        log(`✂️ ¡AUTOCORTE AMARILLO! ${PLAYERS[bot]} posee un par de amarillos y lo descarta (${pair[0].pos} y ${pair[1].pos}).`, "#10b981");
         return true;
     }
 
