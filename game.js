@@ -844,9 +844,11 @@ async function executeBotRounds() {
         checkGameState();
         renderTracker(); renderBoard();
 
-        // Si el bot hizo algo, mostramos el cartel y pausamos el juego 3 segundos
+        // Si el bot hizo algo, mostramos el cartel y pausamos el juego 5 segundos
         if (acted && currentToastLogs.length > 0) {
-            await showToast(`Turno de ${PLAYERS[bot]}`, currentToastLogs.join(''), 3000);
+            await showToast(`Turno de ${PLAYERS[bot]}`, currentToastLogs.join(''), 5000);
+            // Pausa de 1 segundo entre un bot y el siguiente antes de que aparezca el nuevo cartel
+            await sleep(1000);
         }
     }
 
